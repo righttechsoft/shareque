@@ -63,8 +63,9 @@ export async function generateRegOptions(
         : undefined,
     })),
     authenticatorSelection: {
-      residentKey: "preferred",
-      userVerification: "preferred",
+      authenticatorAttachment: "cross-platform",
+      residentKey: "discouraged",
+      userVerification: "discouraged",
     },
   });
 

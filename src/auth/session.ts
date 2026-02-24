@@ -69,3 +69,8 @@ export function cleanExpiredSessions(): number {
   const result = db.run("DELETE FROM sessions WHERE expires_at <= ?", [now]);
   return result.changes;
 }
+
+export function clearManageSessions(): number {
+  const result = db.run("DELETE FROM sessions WHERE is_admin = 1");
+  return result.changes;
+}

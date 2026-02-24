@@ -220,6 +220,20 @@ document.querySelectorAll('input[name="use_password"]').forEach(cb => {
 })();
 
 // === WebAuthn ===
+function loadWebAuthnLib() {
+  if (window.SimpleWebAuthnBrowser) return Promise.resolve(window.SimpleWebAuthnBrowser);
+  return new Promise((resolve, reject) => {
+    const script = document.createElement('script');
+    script.src = '/webauthn.js';
+    script.onload = () => {
+      if (window.SimpleWebAuthnBrowser) resolve(window.SimpleWebAuthnBrowser);
+      else reject(new Error('WebAuthn library failed to initialize'));
+    };
+    script.onerror = () => reject(new Error('Failed to load WebAuthn library'));
+    document.head.appendChild(script);
+  });
+}
+
 (function initWebAuthn() {
   const ctx = window.__webauthnContext;
   if (!ctx) return;
@@ -232,20 +246,17 @@ document.querySelectorAll('input[name="use_password"]').forEach(cb => {
     regBtn.addEventListener('click', async () => {
       const statusEl = document.getElementById('webauthn-status');
       try {
-        statusEl.textContent = 'Requesting options...';
+        statusEl.textContent = 'Loading WebAuthn...';
+        const lib = await loadWebAuthnLib();
 
+        statusEl.textContent = 'Requesting options...';
         const optRes = await fetch(`${basePath}/api/webauthn/register-options`, {
           method: 'POST',
         });
         const options = await optRes.json();
 
-        // Import SimpleWebAuthn browser
-        const { startRegistration } = await import(
-          'https://cdn.jsdelivr.net/npm/@simplewebauthn/browser@13/dist/bundle/index.js'
-        );
-
         statusEl.textContent = 'Waiting for security key...';
-        const attResp = await startRegistration({ optionsJSON: options });
+        const attResp = await lib.startRegistration({ optionsJSON: options });
 
         const verRes = await fetch(`${basePath}/api/webauthn/register-verify`, {
           method: 'POST',
@@ -274,19 +285,17 @@ document.querySelectorAll('input[name="use_password"]').forEach(cb => {
     authBtn.addEventListener('click', async () => {
       const statusEl = document.getElementById('webauthn-status');
       try {
-        statusEl.textContent = 'Requesting options...';
+        statusEl.textContent = 'Loading WebAuthn...';
+        const lib = await loadWebAuthnLib();
 
+        statusEl.textContent = 'Requesting options...';
         const optRes = await fetch(`${basePath}/api/webauthn/auth-options`, {
           method: 'POST',
         });
         const options = await optRes.json();
 
-        const { startAuthentication } = await import(
-          'https://cdn.jsdelivr.net/npm/@simplewebauthn/browser@13/dist/bundle/index.js'
-        );
-
         statusEl.textContent = 'Waiting for security key...';
-        const assertionResp = await startAuthentication({ optionsJSON: options });
+        const assertionResp = await lib.startAuthentication({ optionsJSON: options });
 
         const verRes = await fetch(`${basePath}/api/webauthn/auth-verify`, {
           method: 'POST',

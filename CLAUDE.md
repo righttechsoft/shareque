@@ -10,7 +10,7 @@ Shareque is a web app for secure sharing of text snippets and files. There are n
 - **Encryption**: node:crypto AES-256-GCM
 - **Password hashing**: Bun.password (bcrypt/argon2)
 - **TOTP**: otpauth
-- **WebAuthn**: @simplewebauthn/server + @simplewebauthn/browser (CDN)
+- **WebAuthn**: @simplewebauthn/server + @simplewebauthn/browser (local UMD bundle)
 - **Email**: nodemailer
 - **QR codes**: qrcode
 - **IDs**: nanoid
@@ -26,7 +26,7 @@ Shareque is a web app for secure sharing of text snippets and files. There are n
 ## Project Structure
 ```
 src/
-├── index.tsx              # Hono app entry, middleware, route mounting, cleanup job
+├── index.tsx              # Hono app entry, middleware, route mounting, cleanup job, manage session wipe on startup
 ├── config.ts              # Loads .env, deletes .env after read, exports config object
 ├── db/
 │   ├── connection.ts      # bun:sqlite instance (WAL mode, foreign keys)
@@ -57,8 +57,9 @@ src/
 
 public/
 ├── style.css               # Pico CSS overrides, tabs, share-url, previews, utilities
-└── client.js               # Tab switching, clipboard, fragment-based decryption,
-                            # WebAuthn browser ceremonies, file preview rendering
+├── client.js               # Tab switching, clipboard, fragment-based decryption,
+│                           # WebAuthn browser ceremonies, file preview rendering
+└── webauthn.js             # @simplewebauthn/browser UMD bundle (loaded on-demand by client.js)
 
 data/                       # Runtime directory (gitignored)
 ├── shareque.db             # SQLite database
@@ -99,10 +100,17 @@ data/                       # Runtime directory (gitignored)
 4. System emails requesting user: view link + generated password
 5. Upload link is consumed (one-time)
 
+### 2FA
+- Both management console and registered users use the same 2FA flow: TOTP or hardware security key (WebAuthn)
+- WebAuthn is restricted to hardware keys only (`authenticatorAttachment: "cross-platform"`, no passkeys/QR codes)
+- WebAuthn browser library (`public/webauthn.js`) is loaded on-demand only when user clicks "Use Security Key"
+- User sessions persist across server restarts (stored in SQLite)
+
 ### Management Console Auth
 - No admin users — the management console is a standalone tool protected by `ADMIN_PASSWORD` env var
 - Password always read from `process.env.ADMIN_PASSWORD` at request time (falls back to config)
 - First login after password: forced 2FA setup (TOTP or WebAuthn)
+- Management sessions are wiped on every server startup (requires fresh login)
 - Re-send invite to existing users resets their password, 2FA, and sessions (serves as "forgot password")
 
 ## Route Map
