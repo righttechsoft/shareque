@@ -10,6 +10,13 @@ const transporter = nodemailer.createTransport({
     : undefined,
 });
 
+const logoUrl = `${config.baseUrl}/logo.png`;
+
+const emailHeader = `
+  <div style="text-align:center;margin-bottom:24px">
+    <img src="${logoUrl}" alt="Shareque" style="height:48px;width:auto" />
+  </div>`;
+
 export async function sendInviteEmail(
   to: string,
   name: string,
@@ -20,6 +27,7 @@ export async function sendInviteEmail(
     to,
     subject: "You've been invited to Shareque",
     html: `
+      ${emailHeader}
       <h2>Welcome to Shareque, ${escapeHtml(name)}!</h2>
       <p>You've been invited to join Shareque. Click the link below to set your password and configure 2FA:</p>
       <p><a href="${escapeHtml(inviteUrl)}">${escapeHtml(inviteUrl)}</a></p>
@@ -38,11 +46,14 @@ export async function sendUploadNotification(
     to,
     subject: "Someone uploaded data to your request",
     html: `
+      ${emailHeader}
       <h2>Upload Received</h2>
       <p>Someone has uploaded data to your upload request.</p>
       <p><strong>View link:</strong> <a href="${escapeHtml(viewUrl)}">${escapeHtml(viewUrl)}</a></p>
       <p><strong>Password:</strong> <code>${escapeHtml(password)}</code></p>
       <p>Use the password above when prompted on the view page.</p>
+      <hr style="border:none;border-top:1px solid #ddd;margin:32px 0 16px" />
+      <p style="color:#999;font-size:12px;text-align:center">This email will be self-destroyed in 3...2...1</p>
     `,
   });
 }

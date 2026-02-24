@@ -103,7 +103,7 @@ export async function verifyAndStoreRegistration(
     `INSERT INTO webauthn_credentials (credential_id, user_id, is_admin, public_key, counter, transports)
      VALUES (?, ?, ?, ?, ?, ?)`,
     [
-      Buffer.from(credential.id).toString("base64url"),
+      credential.id,
       isAdmin ? null : userId,
       isAdmin ? 1 : 0,
       Buffer.from(credential.publicKey).toString("base64url"),
