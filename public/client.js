@@ -111,6 +111,11 @@ document.querySelectorAll('input[name="use_password"]').forEach(cb => {
       if (passwordPrompt) passwordPrompt.style.display = 'none';
       if (contentArea) contentArea.style.display = '';
 
+      // Show delete button after password verified
+      if (ctx.hasPassword) {
+        showDeleteButton(password);
+      }
+
       if (ctx.type === 'text') {
         const data = await res.json();
         if (loadingEl) loadingEl.remove();
@@ -151,6 +156,39 @@ document.querySelectorAll('input[name="use_password"]').forEach(cb => {
         });
       }
     }
+  }
+
+  function showDeleteButton(password) {
+    const area = document.getElementById('delete-btn-area');
+    if (!area) return;
+    area.style.display = '';
+
+    const btn = document.createElement('button');
+    btn.className = 'outline secondary btn-sm';
+    btn.textContent = 'Delete';
+    btn.addEventListener('click', async () => {
+      if (!confirm('Delete this share permanently?')) return;
+      try {
+        const res = await fetch(`/view/${ctx.id}/delete`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ password }),
+        });
+        const data = await res.json();
+        if (data.deleted) {
+          document.getElementById('view-container').innerHTML =
+            '<div class="text-center" style="margin-top:4rem">' +
+            '<h2>Share Deleted</h2>' +
+            '<p class="text-muted">This share has been permanently deleted.</p>' +
+            '</div>';
+        } else {
+          alert(data.error || 'Failed to delete');
+        }
+      } catch {
+        alert('Failed to delete share.');
+      }
+    });
+    area.appendChild(btn);
   }
 
   function renderFileContent(blob, container, actions) {

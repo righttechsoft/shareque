@@ -1,5 +1,6 @@
 import { nanoid } from "nanoid";
-import { mkdirSync, writeFileSync, readFileSync, unlinkSync, existsSync } from "node:fs";
+import { mkdirSync, writeFileSync, readFileSync, unlinkSync, rmdirSync, existsSync, readdirSync } from "node:fs";
+import { dirname } from "node:path";
 import { db } from "../db/connection";
 import {
   generateKey,
@@ -196,6 +197,16 @@ export async function viewShare(
   };
 }
 
+function removeFileAndEmptyDir(filePath: string) {
+  try {
+    unlinkSync(filePath);
+    const dir = dirname(filePath);
+    if (readdirSync(dir).length === 0) {
+      rmdirSync(dir);
+    }
+  } catch {}
+}
+
 export function deleteShare(id: string): boolean {
   const share = db
     .query<ShareRow, [string]>("SELECT * FROM shares WHERE id = ?")
@@ -203,9 +214,7 @@ export function deleteShare(id: string): boolean {
   if (!share) return false;
 
   if (share.file_path && existsSync(share.file_path)) {
-    try {
-      unlinkSync(share.file_path);
-    } catch {}
+    removeFileAndEmptyDir(share.file_path);
   }
 
   db.run("DELETE FROM shares WHERE id = ?", [id]);
@@ -222,9 +231,7 @@ export function cleanupExpiredShares(): number {
 
   for (const share of expired) {
     if (share.file_path && existsSync(share.file_path)) {
-      try {
-        unlinkSync(share.file_path);
-      } catch {}
+      removeFileAndEmptyDir(share.file_path);
     }
   }
 

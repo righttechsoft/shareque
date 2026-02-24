@@ -40,11 +40,14 @@ view.get("/:id", (c) => {
       <div id="view-container" style="margin-top:2rem">
         <div class="view-header">
           <h2>Shared {share.type === "file" ? "File" : "Text"}</h2>
-          <form method="POST" action={`/view/${id}/delete`} style="margin:0">
-            <button type="submit" class="outline secondary btn-sm" onclick="return confirm('Delete this share permanently?')">
-              Delete
-            </button>
-          </form>
+          {!share.has_password && (
+            <form method="POST" action={`/view/${id}/delete`} style="margin:0">
+              <button type="submit" class="outline secondary btn-sm" onclick="return confirm('Delete this share permanently?')">
+                Delete
+              </button>
+            </form>
+          )}
+          <div id="delete-btn-area" style="display:none"></div>
         </div>
 
         {share.type === "file" && share.file_name && (
@@ -126,10 +129,44 @@ view.post("/:id/content", async (c) => {
   });
 });
 
-// POST delete
-view.post("/:id/delete", (c) => {
+// POST delete - requires password if share is password-protected
+view.post("/:id/delete", async (c) => {
   const id = c.req.param("id");
+  const share = getShareMeta(id);
+  if (!share) {
+    return c.html(
+      <MinimalLayout title="Not Found">
+        <div class="text-center" style="margin-top:4rem">
+          <h2>Share Not Found</h2>
+        </div>
+      </MinimalLayout>,
+      404
+    );
+  }
+
+  if (share.has_password) {
+    let body: any;
+    try {
+      body = await c.req.json();
+    } catch {
+      return c.json({ error: "Password required" }, 401);
+    }
+    const password = body?.password;
+    if (!password || !share.password_hash) {
+      return c.json({ error: "Password required" }, 401);
+    }
+    const valid = await Bun.password.verify(password, share.password_hash);
+    if (!valid) {
+      return c.json({ error: "Invalid password" }, 403);
+    }
+  }
+
   deleteShare(id);
+
+  if (share.has_password) {
+    return c.json({ deleted: true });
+  }
+
   return c.html(
     <MinimalLayout title="Deleted">
       <div class="text-center" style="margin-top:4rem">
