@@ -1,0 +1,56 @@
+import { existsSync, readFileSync, unlinkSync } from "node:fs";
+import { resolve } from "node:path";
+
+const envPath = resolve(import.meta.dir, "../.env");
+
+let envVars: Record<string, string> = {};
+
+if (existsSync(envPath)) {
+  const content = readFileSync(envPath, "utf-8");
+  for (const line of content.split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#")) continue;
+    const eqIdx = trimmed.indexOf("=");
+    if (eqIdx === -1) continue;
+    const key = trimmed.slice(0, eqIdx).trim();
+    const value = trimmed.slice(eqIdx + 1).trim();
+    envVars[key] = value;
+  }
+  // Delete .env after reading
+  try {
+    unlinkSync(envPath);
+    console.log("[config] .env file loaded and deleted");
+  } catch {
+    console.warn("[config] Could not delete .env file");
+  }
+}
+
+function env(key: string, fallback?: string): string {
+  return envVars[key] ?? process.env[key] ?? fallback ?? "";
+}
+
+export const config = {
+  adminPassword: env("ADMIN_PASSWORD"),
+  port: parseInt(env("PORT", "3000"), 10),
+  host: env("HOST", "0.0.0.0"),
+  baseUrl: env("BASE_URL", "http://localhost:3000"),
+
+  smtp: {
+    host: env("SMTP_HOST"),
+    port: parseInt(env("SMTP_PORT", "587"), 10),
+    user: env("SMTP_USER"),
+    pass: env("SMTP_PASS"),
+    from: env("SMTP_FROM", "shareque@localhost"),
+  },
+
+  webauthn: {
+    rpName: env("WEBAUTHN_RP_NAME", "Shareque"),
+    rpId: env("WEBAUTHN_RP_ID", "localhost"),
+    origin: env("WEBAUTHN_ORIGIN", "http://localhost:3000"),
+  },
+
+  cleanupInterval: parseInt(env("CLEANUP_INTERVAL", "5"), 10),
+  maxFileSize: parseInt(env("MAX_FILE_SIZE", "100"), 10) * 1024 * 1024,
+  dataDir: resolve(import.meta.dir, "../data"),
+  uploadsDir: resolve(import.meta.dir, "../data/uploads"),
+};
