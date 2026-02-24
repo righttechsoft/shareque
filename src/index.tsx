@@ -23,6 +23,11 @@ const app = new Hono();
 app.use("/style.css", serveStatic({ root: "./public" }));
 app.use("/client.js", serveStatic({ root: "./public" }));
 app.use("/webauthn.js", serveStatic({ root: "./public" }));
+app.use("/logo.png", serveStatic({ root: "./public" }));
+app.use("/apple-touch-icon.png", serveStatic({ root: "./public" }));
+app.use("/favicon-32x32.png", serveStatic({ root: "./public" }));
+app.use("/favicon-16x16.png", serveStatic({ root: "./public" }));
+app.use("/site.webmanifest", serveStatic({ root: "./public" }));
 
 // Routes
 app.route("/manage", manageRoutes);

@@ -4,6 +4,14 @@
 
 .nav-brand {
   text-decoration: none;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.nav-logo {
+  height: 32px;
+  width: auto;
 }
 
 .btn-sm {

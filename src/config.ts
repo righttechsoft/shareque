@@ -29,11 +29,14 @@ function env(key: string, fallback?: string): string {
   return envVars[key] ?? process.env[key] ?? fallback ?? "";
 }
 
+const baseUrl = env("BASE_URL", "http://localhost:3000");
+const baseUrlParsed = new URL(baseUrl);
+
 export const config = {
   adminPassword: env("ADMIN_PASSWORD"),
   port: parseInt(env("PORT", "3000"), 10),
   host: env("HOST", "0.0.0.0"),
-  baseUrl: env("BASE_URL", "http://localhost:3000"),
+  baseUrl,
 
   smtp: {
     host: env("SMTP_HOST"),
@@ -44,9 +47,9 @@ export const config = {
   },
 
   webauthn: {
-    rpName: env("WEBAUTHN_RP_NAME", "Shareque"),
-    rpId: env("WEBAUTHN_RP_ID", "localhost"),
-    origin: env("WEBAUTHN_ORIGIN", "http://localhost:3000"),
+    rpName: "Shareque",
+    rpId: baseUrlParsed.hostname,
+    origin: baseUrlParsed.origin,
   },
 
   cleanupInterval: parseInt(env("CLEANUP_INTERVAL", "5"), 10),
