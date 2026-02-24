@@ -1,7 +1,7 @@
 # Shareque - Secure Sharing App
 
 ## Overview
-Shareque is a web app for secure sharing of text snippets and files. It features admin user management behind password+2FA, invite-only user registration, AES-256-GCM encrypted text/file sharing with unique URLs, and a "request data" feature for receiving uploads from external users.
+Shareque is a web app for secure sharing of text snippets and files. There are no admin users — only registered users. A management console (protected by env var password + 2FA) handles invite-only user registration and password resets. Users get AES-256-GCM encrypted text/file sharing with unique URLs, and a "request data" feature for receiving uploads from external users.
 
 ## Tech Stack
 - **Runtime**: Bun
@@ -43,9 +43,9 @@ src/
 │   └── email.ts           # Nodemailer transport, invite + upload notification emails
 ├── middleware/
 │   ├── auth-guard.ts      # Require user session + 2FA verified
-│   └── admin-guard.ts     # Require admin session + 2FA verified
+│   └── manage-guard.ts    # Require management console session + 2FA verified
 ├── routes/
-│   ├── admin.tsx           # /manage/* - admin login, 2FA setup/verify, user CRUD
+│   ├── admin.tsx           # /manage/* - management login, 2FA setup/verify, user CRUD, re-send invite
 │   ├── auth.tsx            # /login, /logout, /set-password/:token, /setup-2fa, /verify-2fa
 │   ├── dashboard.tsx       # /dashboard, /share/text, /share/file, /request-data
 │   ├── view.tsx            # /view/:id - HTML shell + POST /content + POST /delete
@@ -66,10 +66,10 @@ data/                       # Runtime directory (gitignored)
 ```
 
 ## Database Schema (7 tables)
-1. **admin_config** - Single-row: admin TOTP secret, webauthn flag, tfa_setup_complete
+1. **admin_config** - Single-row: management console TOTP secret, webauthn flag, tfa_setup_complete
 2. **users** - id, name, email, password_hash, totp_secret, tfa_method, invite_token, invite_expires_at
-3. **webauthn_credentials** - credential_id, user_id (nullable for admin), is_admin, public_key, counter, transports
-4. **sessions** - id (random 64-hex), user_id (nullable for admin), is_admin, tfa_verified, expires_at
+3. **webauthn_credentials** - credential_id, user_id (nullable for management console), is_admin, public_key, counter, transports
+4. **sessions** - id (random 64-hex), user_id (nullable for management console), is_admin (flags management session), tfa_verified, expires_at
 5. **shares** - id (nanoid 12), user_id, type, encrypted_data/file_path, iv, auth_tag, encryption_key, password_hash, max_views, view_count, is_consumed, expires_at
 6. **upload_requests** - id, token (nanoid 16), user_id, is_consumed, expires_at
 7. **user_preferences** - user_id, per-type settings for password/ttl/one-time
@@ -99,20 +99,23 @@ data/                       # Runtime directory (gitignored)
 4. System emails requesting user: view link + generated password
 5. Upload link is consumed (one-time)
 
-### Admin Auth
-- Password from .env -> 2FA (TOTP or WebAuthn)
-- First login: forced 2FA setup
-- .env is deleted after values loaded into memory
+### Management Console Auth
+- No admin users — the management console is a standalone tool protected by `ADMIN_PASSWORD` env var
+- Password always read from `process.env.ADMIN_PASSWORD` at request time (falls back to config)
+- First login after password: forced 2FA setup (TOTP or WebAuthn)
+- Re-send invite to existing users resets their password, 2FA, and sessions (serves as "forgot password")
 
 ## Route Map
 | Method | Path | Auth | Purpose |
 |--------|------|------|---------|
-| GET/POST | `/manage/login` | None | Admin password login |
-| GET/POST | `/manage/setup-2fa` | Admin session | First-time 2FA config |
-| GET/POST | `/manage/verify-2fa` | Admin session | 2FA verification |
-| GET | `/manage` | Admin+2FA | User management dashboard |
-| POST | `/manage/invite` | Admin+2FA | Create user + send invite email |
-| POST | `/manage/delete/:id` | Admin+2FA | Delete user + cascade data |
+| GET/POST | `/manage/login` | None | Management console password login |
+| GET/POST | `/manage/setup-2fa` | Manage session | First-time 2FA config |
+| GET/POST | `/manage/verify-2fa` | Manage session | 2FA verification |
+| GET | `/manage` | Manage+2FA | User management dashboard |
+| POST | `/manage/invite` | Manage+2FA | Create user + send invite email |
+| POST | `/manage/resend-invite/:id` | Manage+2FA | Reset password + re-send invite (forgot password) |
+| POST | `/manage/delete/:id` | Manage+2FA | Delete user + cascade data |
+| POST | `/manage/logout` | Manage session | Destroy management session |
 | GET/POST | `/login` | None | User email+password login |
 | POST | `/logout` | Session | Destroy session |
 | GET/POST | `/set-password/:token` | None | Set password from invite link |
@@ -127,11 +130,11 @@ data/                       # Runtime directory (gitignored)
 | POST | `/view/:id/delete` | None | Delete share |
 | GET/POST | `/upload/:token` | None | Public upload form |
 | POST | `/api/webauthn/*` | Session | WebAuthn registration/auth |
-| POST | `/manage/api/webauthn/*` | Admin session | Admin WebAuthn |
+| POST | `/manage/api/webauthn/*` | Manage session | Management console WebAuthn |
 
 ## Environment Variables
 See `.env.example` for all variables. Key ones:
-- `ADMIN_PASSWORD` - Required, admin login password
+- `ADMIN_PASSWORD` - Required, management console login password (read from env var at request time)
 - `PORT` / `HOST` / `BASE_URL` - Server config
 - `SMTP_*` - Email sending config
 - `WEBAUTHN_*` - WebAuthn relying party config

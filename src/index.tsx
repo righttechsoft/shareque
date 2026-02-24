@@ -3,7 +3,7 @@ import { serveStatic } from "hono/bun";
 import { config } from "./config";
 import { initSchema } from "./db/schema";
 import { startCleanupJob } from "./jobs/cleanup";
-import adminRoutes from "./routes/admin";
+import manageRoutes from "./routes/admin";
 import authRoutes from "./routes/auth";
 import dashboardRoutes from "./routes/dashboard";
 import viewRoutes from "./routes/view";
@@ -20,7 +20,7 @@ app.use("/style.css", serveStatic({ root: "./public" }));
 app.use("/client.js", serveStatic({ root: "./public" }));
 
 // Routes
-app.route("/manage", adminRoutes);
+app.route("/manage", manageRoutes);
 app.route("/", authRoutes);
 app.route("/", dashboardRoutes);
 app.route("/view", viewRoutes);

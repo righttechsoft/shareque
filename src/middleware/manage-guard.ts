@@ -2,20 +2,20 @@ import type { Context, Next } from "hono";
 import { getSessionFromCookie } from "../auth/session";
 import { db } from "../db/connection";
 
-interface AdminConfig {
+interface ManageConfig {
   tfa_setup_complete: number;
 }
 
-export async function adminGuard(c: Context, next: Next) {
+export async function manageGuard(c: Context, next: Next) {
   const session = getSessionFromCookie(c);
   if (!session || !session.is_admin) {
     return c.redirect("/manage/login");
   }
   if (!session.tfa_verified) {
-    const adminCfg = db
-      .query<AdminConfig, []>("SELECT tfa_setup_complete FROM admin_config WHERE id = 1")
+    const cfg = db
+      .query<ManageConfig, []>("SELECT tfa_setup_complete FROM admin_config WHERE id = 1")
       .get();
-    if (!adminCfg?.tfa_setup_complete) {
+    if (!cfg?.tfa_setup_complete) {
       return c.redirect("/manage/setup-2fa");
     }
     return c.redirect("/manage/verify-2fa");
@@ -24,7 +24,7 @@ export async function adminGuard(c: Context, next: Next) {
   await next();
 }
 
-export async function adminSessionGuard(c: Context, next: Next) {
+export async function manageSessionGuard(c: Context, next: Next) {
   const session = getSessionFromCookie(c);
   if (!session || !session.is_admin) {
     return c.redirect("/manage/login");
