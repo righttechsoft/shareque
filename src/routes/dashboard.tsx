@@ -93,9 +93,8 @@ dashboard.get("/dashboard", (c) => {
                 min={0}
                 value={prefs.text_ttl_value.toString()}
                 placeholder="0"
-                class="ttl-input"
               />
-              <select name="ttl_unit" class="ttl-select">
+              <select name="ttl_unit">
                 <option value="minutes" selected={prefs.text_ttl_unit === "minutes"}>min</option>
                 <option value="hours" selected={prefs.text_ttl_unit === "hours"}>hrs</option>
                 <option value="days" selected={prefs.text_ttl_unit === "days"}>days</option>
@@ -145,9 +144,8 @@ dashboard.get("/dashboard", (c) => {
                 min={0}
                 value={prefs.file_ttl_value.toString()}
                 placeholder="0"
-                class="ttl-input"
               />
-              <select name="ttl_unit" class="ttl-select">
+              <select name="ttl_unit">
                 <option value="minutes" selected={prefs.file_ttl_unit === "minutes"}>min</option>
                 <option value="hours" selected={prefs.file_ttl_unit === "hours"}>hrs</option>
                 <option value="days" selected={prefs.file_ttl_unit === "days"}>days</option>

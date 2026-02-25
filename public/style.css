@@ -189,10 +189,14 @@
 
 .inline-options {
   display: flex;
-  gap: 1.5rem;
+  gap: 1rem;
   align-items: center;
   margin-bottom: 1rem;
   flex-wrap: wrap;
+}
+
+.inline-options label {
+  margin-bottom: 0;
 }
 
 .ttl-group {
@@ -202,20 +206,21 @@
   margin-left: auto;
 }
 
-.ttl-input {
-  width: 4.5rem;
-  margin-bottom: 0;
-  padding: 0.25rem 0.4rem;
-  font-size: 0.85rem;
-  height: auto;
+.ttl-group input,
+.ttl-group select {
+  width: auto !important;
+  margin-bottom: 0 !important;
+  padding: 0.35rem 0.5rem !important;
+  font-size: 0.85rem !important;
+  height: auto !important;
 }
 
-.ttl-select {
-  width: 4.5rem;
-  margin-bottom: 0;
-  padding: 0.25rem 0.3rem;
-  font-size: 0.85rem;
-  height: auto;
+.ttl-group input[type="number"] {
+  max-width: 4rem;
+}
+
+.ttl-group select {
+  max-width: 5rem;
 }
 
 @media (max-width: 768px) {
