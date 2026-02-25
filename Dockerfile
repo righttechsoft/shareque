@@ -11,7 +11,7 @@ COPY tsconfig.json ./
 
 RUN mkdir -p data/uploads
 
-RUN addgroup --system appgroup && adduser --system --ingroup appgroup appuser
+RUN groupadd --system appgroup && useradd --system --gid appgroup --no-create-home appuser
 RUN chown -R appuser:appgroup data
 
 USER appuser
