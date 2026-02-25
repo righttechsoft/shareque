@@ -22,6 +22,19 @@ import { config } from "../config";
 
 const auth = new Hono();
 
+function safeJsonEmbed(value: unknown): string {
+  return JSON.stringify(value).replace(/</g, "\\u003c");
+}
+
+function validatePassword(password: string): string | null {
+  if (password.length < 12) return "Password must be at least 12 characters.";
+  if (!/[A-Z]/.test(password)) return "Password must include an uppercase letter.";
+  if (!/[a-z]/.test(password)) return "Password must include a lowercase letter.";
+  if (!/[0-9]/.test(password)) return "Password must include a digit.";
+  if (!/[^A-Za-z0-9]/.test(password)) return "Password must include a special character.";
+  return null;
+}
+
 interface UserRow {
   id: string;
   name: string;
@@ -180,11 +193,11 @@ auth.get("/set-password/:token", (c) => {
         <form method="POST" action={`/set-password/${token}`}>
           <label>
             Password
-            <input type="password" name="password" required minLength={8} autofocus />
+            <input type="password" name="password" required minLength={12} autofocus />
           </label>
           <label>
             Confirm Password
-            <input type="password" name="confirm" required minLength={8} />
+            <input type="password" name="confirm" required minLength={12} />
           </label>
           <button type="submit">Set Password</button>
         </form>
@@ -217,22 +230,47 @@ auth.post("/set-password/:token", async (c) => {
   const password = body.password as string;
   const confirm = body.confirm as string;
 
-  if (!password || password.length < 8 || password !== confirm) {
+  if (!password || password !== confirm) {
     return c.html(
       <MinimalLayout title="Set Password">
         <div style="max-width:400px;margin:4rem auto">
           <h2>Welcome, {user.name}!</h2>
           <div class="alert alert-error">
-            Passwords must match and be at least 8 characters.
+            Passwords must match.
           </div>
           <form method="POST" action={`/set-password/${token}`}>
             <label>
               Password
-              <input type="password" name="password" required minLength={8} autofocus />
+              <input type="password" name="password" required minLength={12} autofocus />
             </label>
             <label>
               Confirm Password
-              <input type="password" name="confirm" required minLength={8} />
+              <input type="password" name="confirm" required minLength={12} />
+            </label>
+            <button type="submit">Set Password</button>
+          </form>
+        </div>
+      </MinimalLayout>
+    );
+  }
+
+  const pwError = validatePassword(password);
+  if (pwError) {
+    return c.html(
+      <MinimalLayout title="Set Password">
+        <div style="max-width:400px;margin:4rem auto">
+          <h2>Welcome, {user.name}!</h2>
+          <div class="alert alert-error">
+            {pwError}
+          </div>
+          <form method="POST" action={`/set-password/${token}`}>
+            <label>
+              Password
+              <input type="password" name="password" required minLength={12} autofocus />
+            </label>
+            <label>
+              Confirm Password
+              <input type="password" name="confirm" required minLength={12} />
             </label>
             <button type="submit">Set Password</button>
           </form>
@@ -311,7 +349,7 @@ auth.get("/setup-2fa", sessionGuard, async (c) => {
       <script
         dangerouslySetInnerHTML={{
           __html: `
-          window.__webauthnContext = { isAdmin: false, userId: '${userId}', setupMode: true };
+          window.__webauthnContext = { isAdmin: false, userId: ${safeJsonEmbed(userId)}, setupMode: true };
         `,
         }}
       />
@@ -385,7 +423,7 @@ auth.get("/verify-2fa", sessionGuard, (c) => {
       <script
         dangerouslySetInnerHTML={{
           __html: `
-          window.__webauthnContext = { isAdmin: false, userId: '${userId}', verifyMode: true };
+          window.__webauthnContext = { isAdmin: false, userId: ${safeJsonEmbed(userId)}, verifyMode: true };
         `,
         }}
       />

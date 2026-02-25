@@ -1,6 +1,6 @@
 import { nanoid } from "nanoid";
 import { mkdirSync, writeFileSync, readFileSync, unlinkSync, rmdirSync, existsSync, readdirSync } from "node:fs";
-import { dirname } from "node:path";
+import { dirname, resolve } from "node:path";
 import { db } from "../db/connection";
 import {
   generateKey,
@@ -10,6 +10,9 @@ import {
   decryptFile,
   keyToBase64Url,
   keyFromBase64Url,
+  keyVerificationHash,
+  createSignedToken,
+  verifySignedToken,
 } from "../crypto/encryption";
 import { config } from "../config";
 
@@ -24,8 +27,7 @@ interface ShareRow {
   file_size: number | null;
   iv: string;
   auth_tag: string;
-  encryption_key: string;
-  password_hash: string | null;
+  key_verification: string;
   has_password: number;
   max_views: number | null;
   view_count: number;
@@ -53,40 +55,50 @@ interface CreateFileOptions {
   expiresAt?: number;
 }
 
-export async function createTextShare(opts: CreateTextOptions) {
+export interface ShareResult {
+  id: string;
+  key: string;
+  passwordToken?: string;
+}
+
+export async function createTextShare(opts: CreateTextOptions): Promise<ShareResult> {
   const id = nanoid(12);
   const key = generateKey();
+  const keyB64 = keyToBase64Url(key);
   const { encrypted, iv, authTag } = encryptText(opts.text, key);
+  const kvHash = keyVerificationHash(keyB64);
 
-  let passwordHash: string | null = null;
+  let passwordToken: string | undefined;
   if (opts.password) {
-    passwordHash = await Bun.password.hash(opts.password);
+    const bcryptHash = await Bun.password.hash(opts.password);
+    passwordToken = createSignedToken({ h: bcryptHash }, config.appSecret);
   }
 
   db.run(
-    `INSERT INTO shares (id, user_id, type, encrypted_data, iv, auth_tag, encryption_key, password_hash, has_password, max_views, expires_at)
-     VALUES (?, ?, 'text', ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO shares (id, user_id, type, encrypted_data, iv, auth_tag, key_verification, has_password, max_views, expires_at)
+     VALUES (?, ?, 'text', ?, ?, ?, ?, ?, ?, ?)`,
     [
       id,
       opts.userId,
       encrypted,
       iv,
       authTag,
-      keyToBase64Url(key),
-      passwordHash,
+      kvHash,
       opts.password ? 1 : 0,
       opts.maxViews ?? null,
       opts.expiresAt ?? null,
     ]
   );
 
-  return { id, key: keyToBase64Url(key) };
+  return { id, key: keyB64, passwordToken };
 }
 
-export async function createFileShare(opts: CreateFileOptions) {
+export async function createFileShare(opts: CreateFileOptions): Promise<ShareResult> {
   const id = nanoid(12);
   const key = generateKey();
+  const keyB64 = keyToBase64Url(key);
   const { encrypted, iv, authTag } = encryptFile(opts.fileData, key);
+  const kvHash = keyVerificationHash(keyB64);
 
   const now = new Date();
   const monthDir = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
@@ -96,14 +108,15 @@ export async function createFileShare(opts: CreateFileOptions) {
   const filePath = `${uploadDir}/${id}.enc`;
   writeFileSync(filePath, encrypted);
 
-  let passwordHash: string | null = null;
+  let passwordToken: string | undefined;
   if (opts.password) {
-    passwordHash = await Bun.password.hash(opts.password);
+    const bcryptHash = await Bun.password.hash(opts.password);
+    passwordToken = createSignedToken({ h: bcryptHash }, config.appSecret);
   }
 
   db.run(
-    `INSERT INTO shares (id, user_id, type, file_path, file_name, file_mime, file_size, iv, auth_tag, encryption_key, password_hash, has_password, max_views, expires_at)
-     VALUES (?, ?, 'file', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO shares (id, user_id, type, file_path, file_name, file_mime, file_size, iv, auth_tag, key_verification, has_password, max_views, expires_at)
+     VALUES (?, ?, 'file', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       id,
       opts.userId,
@@ -113,15 +126,14 @@ export async function createFileShare(opts: CreateFileOptions) {
       opts.fileSize,
       iv,
       authTag,
-      keyToBase64Url(key),
-      passwordHash,
+      kvHash,
       opts.password ? 1 : 0,
       opts.maxViews ?? null,
       opts.expiresAt ?? null,
     ]
   );
 
-  return { id, key: keyToBase64Url(key) };
+  return { id, key: keyB64, passwordToken };
 }
 
 export function getShareMeta(id: string): ShareRow | null {
@@ -133,7 +145,8 @@ export function getShareMeta(id: string): ShareRow | null {
 export async function viewShare(
   id: string,
   encryptionKey: string,
-  password?: string
+  password?: string,
+  passwordToken?: string
 ): Promise<
   | { ok: true; type: string; content?: string; fileData?: Buffer; fileName?: string; fileMime?: string; fileSize?: number }
   | { ok: false; error: string }
@@ -146,10 +159,18 @@ export async function viewShare(
 
   if (!share) return { ok: false, error: "Share not found or expired" };
 
+  // Verify key ownership via verification hash
+  const kvHash = keyVerificationHash(encryptionKey);
+  if (kvHash !== share.key_verification) {
+    return { ok: false, error: "Invalid encryption key" };
+  }
+
   // Verify password if needed
   if (share.has_password) {
-    if (!password) return { ok: false, error: "password_required" };
-    const valid = await Bun.password.verify(password, share.password_hash!);
+    if (!password || !passwordToken) return { ok: false, error: "password_required" };
+    const tokenData = verifySignedToken(passwordToken, config.appSecret) as { h: string } | null;
+    if (!tokenData?.h) return { ok: false, error: "Invalid password token" };
+    const valid = await Bun.password.verify(password, tokenData.h);
     if (!valid) return { ok: false, error: "Invalid password" };
   }
 
@@ -165,6 +186,11 @@ export async function viewShare(
       )
       .get(id);
     if (!result) return { ok: false, error: "Share has been consumed" };
+
+    // If consumed, immediately delete file
+    if (result.is_consumed && result.file_path && existsSync(result.file_path)) {
+      removeFileAndEmptyDir(result.file_path);
+    }
   } else {
     db.run("UPDATE shares SET view_count = view_count + 1 WHERE id = ?", [id]);
   }
@@ -199,6 +225,13 @@ export async function viewShare(
 
 function removeFileAndEmptyDir(filePath: string) {
   try {
+    // Validate path is within uploads directory
+    const resolved = resolve(filePath);
+    const uploadsResolved = resolve(config.uploadsDir);
+    if (!resolved.startsWith(uploadsResolved)) {
+      console.error("[share] Refusing to delete file outside uploads dir:", filePath);
+      return;
+    }
     unlinkSync(filePath);
     const dir = dirname(filePath);
     if (readdirSync(dir).length === 0) {
@@ -207,11 +240,16 @@ function removeFileAndEmptyDir(filePath: string) {
   } catch {}
 }
 
-export function deleteShare(id: string): boolean {
+export function deleteShare(id: string, encryptionKey?: string): boolean {
   const share = db
     .query<ShareRow, [string]>("SELECT * FROM shares WHERE id = ?")
     .get(id);
   if (!share) return false;
+
+  // Require encryption key for deletion
+  if (!encryptionKey) return false;
+  const kvHash = keyVerificationHash(encryptionKey);
+  if (kvHash !== share.key_verification) return false;
 
   if (share.file_path && existsSync(share.file_path)) {
     removeFileAndEmptyDir(share.file_path);

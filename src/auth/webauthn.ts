@@ -23,7 +23,17 @@ const rpID = config.webauthn.rpId;
 const origin = config.webauthn.origin;
 
 // In-memory challenge store (short-lived)
+const MAX_CHALLENGES = 1000;
 const challengeStore = new Map<string, string>();
+
+function setChallengeWithBound(key: string, value: string) {
+  if (challengeStore.size >= MAX_CHALLENGES && !challengeStore.has(key)) {
+    // Evict oldest entry
+    const oldest = challengeStore.keys().next().value;
+    if (oldest !== undefined) challengeStore.delete(oldest);
+  }
+  challengeStore.set(key, value);
+}
 
 export function getStoredCredentials(
   userId: string | null,
@@ -69,7 +79,7 @@ export async function generateRegOptions(
     },
   });
 
-  challengeStore.set(userId, options.challenge);
+  setChallengeWithBound(userId, options.challenge);
   setTimeout(() => challengeStore.delete(userId), 5 * 60 * 1000);
 
   return options;
@@ -138,7 +148,7 @@ export async function generateAuthOptions(
     userVerification: "preferred",
   });
 
-  challengeStore.set(userId, options.challenge);
+  setChallengeWithBound(userId, options.challenge);
   setTimeout(() => challengeStore.delete(userId), 5 * 60 * 1000);
 
   return options;

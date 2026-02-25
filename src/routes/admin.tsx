@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import { createHash, timingSafeEqual } from "node:crypto";
 import { db } from "../db/connection";
 import { config } from "../config";
 import {
@@ -61,8 +62,29 @@ manage.post("/login", async (c) => {
   const body = await c.req.parseBody();
   const password = body.password as string;
 
-  const managePassword = process.env.ADMIN_PASSWORD || config.adminPassword;
-  if (!password || !managePassword || password !== managePassword) {
+  const managePassword = config.adminPassword;
+  if (!password || !managePassword) {
+    return c.html(
+      <MinimalLayout title="Management Console">
+        <div style="max-width:400px;margin:4rem auto">
+          <h2>Management Console</h2>
+          <div class="alert alert-error">Invalid password</div>
+          <form method="POST" action="/manage/login">
+            <label>
+              Password
+              <input type="password" name="password" required autofocus />
+            </label>
+            <button type="submit">Login</button>
+          </form>
+        </div>
+      </MinimalLayout>
+    );
+  }
+
+  // Timing-safe comparison: hash both and compare digests
+  const enteredHash = createHash("sha256").update(password).digest();
+  const storedHash = createHash("sha256").update(managePassword).digest();
+  if (!timingSafeEqual(enteredHash, storedHash)) {
     return c.html(
       <MinimalLayout title="Management Console">
         <div style="max-width:400px;margin:4rem auto">

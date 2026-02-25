@@ -51,13 +51,20 @@ export async function fulfillUploadRequest(
   token: string,
   data: { type: "text"; text: string } | { type: "file"; fileData: Buffer; fileName: string; fileMime: string; fileSize: number }
 ): Promise<{ ok: true } | { ok: false; error: string }> {
-  const request = getUploadRequest(token);
-  if (!request) return { ok: false, error: "Upload request not found or expired" };
+  // Atomic consumption: UPDATE ... WHERE is_consumed = 0 RETURNING *
+  const now = Math.floor(Date.now() / 1000);
+  const request = db
+    .query<UploadRequestRow, [string, number]>(
+      "UPDATE upload_requests SET is_consumed = 1 WHERE token = ? AND is_consumed = 0 AND expires_at > ? RETURNING *"
+    )
+    .get(token, now);
+
+  if (!request) return { ok: false, error: "Upload request not found, expired, or already used" };
 
   // Generate a random password for the share
   const password = randomBytes(16).toString("base64url");
 
-  let shareResult: { id: string; key: string };
+  let shareResult: { id: string; key: string; passwordToken?: string };
   if (data.type === "text") {
     shareResult = await createTextShare({
       userId: request.user_id,
@@ -75,18 +82,17 @@ export async function fulfillUploadRequest(
     });
   }
 
-  // Mark request as consumed
-  db.run("UPDATE upload_requests SET is_consumed = 1 WHERE id = ?", [
-    request.id,
-  ]);
-
   // Get user email
   const user = db
     .query<UserRow, [string]>("SELECT id, email FROM users WHERE id = ?")
     .get(request.user_id);
 
   if (user) {
-    const viewUrl = `${config.baseUrl}/view/${shareResult.id}#${shareResult.key}`;
+    // Build URL with key.passwordToken fragment format
+    const fragment = shareResult.passwordToken
+      ? `${shareResult.key}.${shareResult.passwordToken}`
+      : shareResult.key;
+    const viewUrl = `${config.baseUrl}/view/${shareResult.id}#${fragment}`;
     try {
       await sendUploadNotification(user.email, viewUrl, password);
     } catch (err) {

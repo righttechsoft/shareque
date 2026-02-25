@@ -1,8 +1,21 @@
 import { Hono } from "hono";
 import { getShareMeta, viewShare, deleteShare } from "../services/share";
+import { verifySignedToken } from "../crypto/encryption";
+import { config } from "../config";
 import { MinimalLayout } from "../views/layout";
 
 const view = new Hono();
+
+function safeJsonEmbed(value: unknown): string {
+  return JSON.stringify(value).replace(/</g, "\\u003c");
+}
+
+function sanitizeFilename(name: string): string {
+  // Strip control characters
+  const cleaned = name.replace(/[\x00-\x1f\x7f]/g, "");
+  // RFC 5987 encoding for Content-Disposition
+  return encodeURIComponent(cleaned).replace(/['()]/g, (ch) => "%" + ch.charCodeAt(0).toString(16).toUpperCase());
+}
 
 // View page shell - JS will read fragment and POST for content
 view.get("/:id", (c) => {
@@ -40,13 +53,6 @@ view.get("/:id", (c) => {
       <div id="view-container" style="margin-top:2rem">
         <div class="view-header">
           <h2>Shared {share.type === "file" ? "File" : "Text"}</h2>
-          {!share.has_password && (
-            <form method="POST" action={`/view/${id}/delete`} style="margin:0">
-              <button type="submit" class="outline secondary btn-sm" onclick="return confirm('Delete this share permanently?')">
-                Delete
-              </button>
-            </form>
-          )}
           <div id="delete-btn-area" style="display:none"></div>
         </div>
 
@@ -81,11 +87,11 @@ view.get("/:id", (c) => {
         dangerouslySetInnerHTML={{
           __html: `
           window.__shareContext = {
-            id: '${id}',
-            type: '${share.type}',
+            id: ${safeJsonEmbed(id)},
+            type: ${safeJsonEmbed(share.type)},
             hasPassword: ${share.has_password ? "true" : "false"},
-            fileName: ${share.file_name ? `'${share.file_name.replace(/'/g, "\\'")}'` : "null"},
-            fileMime: ${share.file_mime ? `'${share.file_mime}'` : "null"}
+            fileName: ${share.file_name ? safeJsonEmbed(share.file_name) : "null"},
+            fileMime: ${share.file_mime ? safeJsonEmbed(share.file_mime) : "null"}
           };
         `,
         }}
@@ -105,10 +111,10 @@ view.post("/:id/content", async (c) => {
     return c.json({ error: "Invalid request" }, 400);
   }
 
-  const { key, password } = body;
+  const { key, password, passwordToken } = body;
   if (!key) return c.json({ error: "Encryption key required" }, 400);
 
-  const result = await viewShare(id, key, password);
+  const result = await viewShare(id, key, password, passwordToken);
 
   if (!result.ok) {
     return c.json({ error: result.error }, result.error === "password_required" ? 401 : 400);
@@ -119,62 +125,58 @@ view.post("/:id/content", async (c) => {
   }
 
   // File - return as binary with metadata headers
+  // Sanitize filename for Content-Disposition
+  const safeName = sanitizeFilename(result.fileName || "download");
   return new Response(result.fileData, {
     headers: {
       "Content-Type": result.fileMime || "application/octet-stream",
-      "Content-Disposition": `inline; filename="${result.fileName}"`,
+      "Content-Disposition": `inline; filename*=UTF-8''${safeName}`,
       "X-File-Name": result.fileName || "download",
       "X-File-Mime": result.fileMime || "application/octet-stream",
     },
   });
 });
 
-// POST delete - requires password if share is password-protected
+// POST delete - always JSON-based, requires encryption key
 view.post("/:id/delete", async (c) => {
   const id = c.req.param("id");
-  const share = getShareMeta(id);
-  if (!share) {
-    return c.html(
-      <MinimalLayout title="Not Found">
-        <div class="text-center" style="margin-top:4rem">
-          <h2>Share Not Found</h2>
-        </div>
-      </MinimalLayout>,
-      404
-    );
+
+  let body: any;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: "Invalid request" }, 400);
   }
 
+  const { key, password, passwordToken } = body;
+  if (!key) return c.json({ error: "Encryption key required" }, 400);
+
+  const share = getShareMeta(id);
+  if (!share) {
+    return c.json({ error: "Share not found" }, 404);
+  }
+
+  // If password-protected, verify password via signed token
   if (share.has_password) {
-    let body: any;
-    try {
-      body = await c.req.json();
-    } catch {
+    if (!password || !passwordToken) {
       return c.json({ error: "Password required" }, 401);
     }
-    const password = body?.password;
-    if (!password || !share.password_hash) {
-      return c.json({ error: "Password required" }, 401);
+    const tokenData = verifySignedToken(passwordToken, config.appSecret) as { h: string } | null;
+    if (!tokenData?.h) {
+      return c.json({ error: "Invalid password token" }, 403);
     }
-    const valid = await Bun.password.verify(password, share.password_hash);
+    const valid = await Bun.password.verify(password, tokenData.h);
     if (!valid) {
       return c.json({ error: "Invalid password" }, 403);
     }
   }
 
-  deleteShare(id);
-
-  if (share.has_password) {
-    return c.json({ deleted: true });
+  const deleted = deleteShare(id, key);
+  if (!deleted) {
+    return c.json({ error: "Failed to delete (invalid key)" }, 403);
   }
 
-  return c.html(
-    <MinimalLayout title="Deleted">
-      <div class="text-center" style="margin-top:4rem">
-        <h2>Share Deleted</h2>
-        <p class="text-muted">This share has been permanently deleted.</p>
-      </div>
-    </MinimalLayout>
-  );
+  return c.json({ deleted: true });
 });
 
 function formatSize(bytes: number): string {

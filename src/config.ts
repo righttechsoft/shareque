@@ -32,8 +32,15 @@ function env(key: string, fallback?: string): string {
 const baseUrl = env("BASE_URL", "http://localhost:3000");
 const baseUrlParsed = new URL(baseUrl);
 
+const appSecret = env("APP_SECRET");
+if (!appSecret) {
+  console.error("[config] FATAL: APP_SECRET is required. Generate with: openssl rand -hex 32");
+  process.exit(1);
+}
+
 export const config = {
   adminPassword: env("ADMIN_PASSWORD"),
+  appSecret,
   port: parseInt(env("PORT", "3000"), 10),
   host: env("HOST", "0.0.0.0"),
   baseUrl,

@@ -45,22 +45,31 @@ document.querySelectorAll('input[name="use_password"]').forEach(cb => {
   const ctx = window.__shareContext;
   if (!ctx) return;
 
-  const hash = location.hash.slice(1);
-  if (!hash && !ctx.hasPassword) {
+  const rawHash = location.hash.slice(1);
+  if (!rawHash && !ctx.hasPassword) {
     document.getElementById('loading-indicator')?.remove();
     const area = document.getElementById('content-area');
     if (area) area.innerHTML = '<div class="alert alert-error">No encryption key found in URL.</div>';
     return;
   }
 
+  // Parse hash: split on first "." — left part is encryption key (base64url, no dots),
+  // right part is passwordToken (payload.signature)
+  let encryptionKey = rawHash;
+  let passwordToken = null;
+  const dotIdx = rawHash.indexOf('.');
+  if (dotIdx !== -1) {
+    encryptionKey = rawHash.slice(0, dotIdx);
+    passwordToken = rawHash.slice(dotIdx + 1);
+  }
+
   if (ctx.hasPassword) {
     // Wait for password submission
     const submitBtn = document.getElementById('submit-password');
     const pwInput = document.getElementById('share-password');
-    const pwError = document.getElementById('password-error');
 
     if (submitBtn) {
-      const doSubmit = () => fetchContent(hash, pwInput?.value);
+      const doSubmit = () => fetchContent(encryptionKey, pwInput?.value, passwordToken);
 
       submitBtn.addEventListener('click', doSubmit);
       pwInput?.addEventListener('keydown', e => {
@@ -72,10 +81,10 @@ document.querySelectorAll('input[name="use_password"]').forEach(cb => {
     }
   } else {
     // Fetch content immediately
-    fetchContent(hash);
+    fetchContent(encryptionKey, undefined, passwordToken);
   }
 
-  async function fetchContent(key, password) {
+  async function fetchContent(key, password, pwToken) {
     const loadingEl = document.getElementById('loading-indicator');
     const contentArea = document.getElementById('content-area');
     const actionsArea = document.getElementById('content-actions');
@@ -83,10 +92,14 @@ document.querySelectorAll('input[name="use_password"]').forEach(cb => {
     const pwError = document.getElementById('password-error');
 
     try {
+      const bodyObj = { key };
+      if (password) bodyObj.password = password;
+      if (pwToken) bodyObj.passwordToken = pwToken;
+
       const res = await fetch(`/view/${ctx.id}/content`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ key, password }),
+        body: JSON.stringify(bodyObj),
       });
 
       if (res.status === 401) {
@@ -111,10 +124,8 @@ document.querySelectorAll('input[name="use_password"]').forEach(cb => {
       if (passwordPrompt) passwordPrompt.style.display = 'none';
       if (contentArea) contentArea.style.display = '';
 
-      // Show delete button after password verified
-      if (ctx.hasPassword) {
-        showDeleteButton(password);
-      }
+      // Show delete button (always shown — requires key from URL)
+      showDeleteButton(key, password, pwToken);
 
       if (ctx.type === 'text') {
         const data = await res.json();
@@ -158,7 +169,7 @@ document.querySelectorAll('input[name="use_password"]').forEach(cb => {
     }
   }
 
-  function showDeleteButton(password) {
+  function showDeleteButton(key, password, pwToken) {
     const area = document.getElementById('delete-btn-area');
     if (!area) return;
     area.style.display = '';
@@ -169,10 +180,14 @@ document.querySelectorAll('input[name="use_password"]').forEach(cb => {
     btn.addEventListener('click', async () => {
       if (!confirm('Delete this share permanently?')) return;
       try {
+        const bodyObj = { key };
+        if (password) bodyObj.password = password;
+        if (pwToken) bodyObj.passwordToken = pwToken;
+
         const res = await fetch(`/view/${ctx.id}/delete`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ password }),
+          body: JSON.stringify(bodyObj),
         });
         const data = await res.json();
         if (data.deleted) {

@@ -1,10 +1,55 @@
 import { randomBytes } from "node:crypto";
 import { db } from "../db/connection";
+import { config } from "../config";
+import { encryptCookieValue, decryptCookieValue } from "../crypto/encryption";
 import type { Context } from "hono";
 import { setCookie, getCookie, deleteCookie } from "hono/cookie";
 
 const SESSION_COOKIE = "sq_session";
+const PREFS_COOKIE = "sq_prefs";
 const SESSION_TTL = 24 * 60 * 60; // 24 hours
+const PREFS_TTL = 365 * 24 * 60 * 60; // 1 year
+
+export interface UserPreferences {
+  text_use_password: number;
+  text_ttl_value: number;
+  text_ttl_unit: string;
+  text_one_time: number;
+  file_use_password: number;
+  file_ttl_value: number;
+  file_ttl_unit: string;
+  file_one_time: number;
+}
+
+export const DEFAULT_PREFS: UserPreferences = {
+  text_use_password: 0,
+  text_ttl_value: 24,
+  text_ttl_unit: "hours",
+  text_one_time: 0,
+  file_use_password: 0,
+  file_ttl_value: 24,
+  file_ttl_unit: "hours",
+  file_one_time: 0,
+};
+
+export function getUserPreferences(c: Context): UserPreferences {
+  const cookie = getCookie(c, PREFS_COOKIE);
+  if (!cookie) return { ...DEFAULT_PREFS };
+  const data = decryptCookieValue(cookie, config.appSecret);
+  if (!data) return { ...DEFAULT_PREFS };
+  return { ...DEFAULT_PREFS, ...(data as Partial<UserPreferences>) };
+}
+
+export function setUserPreferences(c: Context, prefs: UserPreferences): void {
+  const value = encryptCookieValue(prefs, config.appSecret);
+  setCookie(c, PREFS_COOKIE, value, {
+    httpOnly: true,
+    secure: c.req.url.startsWith("https"),
+    sameSite: "Lax",
+    path: "/",
+    maxAge: PREFS_TTL,
+  });
+}
 
 interface Session {
   id: string;

@@ -55,8 +55,7 @@ export function initSchema() {
       file_size INTEGER,
       iv TEXT NOT NULL,
       auth_tag TEXT NOT NULL,
-      encryption_key TEXT NOT NULL,
-      password_hash TEXT,
+      key_verification TEXT NOT NULL,
       has_password INTEGER NOT NULL DEFAULT 0,
       max_views INTEGER,
       view_count INTEGER NOT NULL DEFAULT 0,
@@ -75,18 +74,57 @@ export function initSchema() {
       created_at INTEGER NOT NULL DEFAULT (unixepoch()),
       FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
     );
-
-    CREATE TABLE IF NOT EXISTS user_preferences (
-      user_id TEXT PRIMARY KEY,
-      text_use_password INTEGER NOT NULL DEFAULT 0,
-      text_ttl_value INTEGER NOT NULL DEFAULT 24,
-      text_ttl_unit TEXT NOT NULL DEFAULT 'hours',
-      text_one_time INTEGER NOT NULL DEFAULT 0,
-      file_use_password INTEGER NOT NULL DEFAULT 0,
-      file_ttl_value INTEGER NOT NULL DEFAULT 24,
-      file_ttl_unit TEXT NOT NULL DEFAULT 'hours',
-      file_one_time INTEGER NOT NULL DEFAULT 0,
-      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-    );
   `);
+}
+
+export function runMigrations() {
+  // Check if old schema has encryption_key column
+  const tableInfo = db.query<{ name: string }, []>("PRAGMA table_info(shares)").all();
+  const hasEncryptionKey = tableInfo.some((col) => col.name === "encryption_key");
+
+  if (hasEncryptionKey) {
+    console.log("[migration] Migrating shares table: removing encryption_key and password_hash columns");
+
+    db.exec(`
+      -- Mark all existing shares as consumed (they stored keys server-side, can't be recovered)
+      UPDATE shares SET is_consumed = 1;
+
+      -- Recreate shares table without encryption_key and password_hash
+      CREATE TABLE shares_new (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        type TEXT NOT NULL CHECK (type IN ('text', 'file')),
+        encrypted_data BLOB,
+        file_path TEXT,
+        file_name TEXT,
+        file_mime TEXT,
+        file_size INTEGER,
+        iv TEXT NOT NULL,
+        auth_tag TEXT NOT NULL,
+        key_verification TEXT NOT NULL DEFAULT '',
+        has_password INTEGER NOT NULL DEFAULT 0,
+        max_views INTEGER,
+        view_count INTEGER NOT NULL DEFAULT 0,
+        is_consumed INTEGER NOT NULL DEFAULT 0,
+        expires_at INTEGER,
+        created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+      );
+
+      INSERT INTO shares_new (id, user_id, type, encrypted_data, file_path, file_name, file_mime, file_size, iv, auth_tag, key_verification, has_password, max_views, view_count, is_consumed, expires_at, created_at)
+        SELECT id, user_id, type, encrypted_data, file_path, file_name, file_mime, file_size, iv, auth_tag, '', has_password, max_views, view_count, 1, expires_at, created_at FROM shares;
+
+      DROP TABLE shares;
+      ALTER TABLE shares_new RENAME TO shares;
+    `);
+
+    console.log("[migration] Shares table migrated. Old shares marked as consumed.");
+  }
+
+  // Drop user_preferences table if it exists
+  const tables = db.query<{ name: string }, []>("SELECT name FROM sqlite_master WHERE type='table' AND name='user_preferences'").all();
+  if (tables.length > 0) {
+    console.log("[migration] Dropping user_preferences table (moved to signed cookie)");
+    db.exec("DROP TABLE user_preferences");
+  }
 }

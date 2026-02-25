@@ -1,25 +1,13 @@
 import { Hono } from "hono";
 import { db } from "../db/connection";
 import { authGuard } from "../middleware/auth-guard";
-import { getSessionFromCookie } from "../auth/session";
-import { createTextShare, createFileShare, getShareMeta } from "../services/share";
+import { getUserPreferences, setUserPreferences } from "../auth/session";
+import { createTextShare, createFileShare } from "../services/share";
 import { createUploadRequest } from "../services/upload-request";
 import { Layout } from "../views/layout";
 import { config } from "../config";
 
 const dashboard = new Hono();
-
-interface PrefsRow {
-  user_id: string;
-  text_use_password: number;
-  text_ttl_value: number;
-  text_ttl_unit: string;
-  text_one_time: number;
-  file_use_password: number;
-  file_ttl_value: number;
-  file_ttl_unit: string;
-  file_one_time: number;
-}
 
 interface ShareRow {
   id: string;
@@ -49,16 +37,7 @@ dashboard.use("/request-data", authGuard);
 dashboard.get("/dashboard", (c) => {
   const userId = c.get("userId") as string;
 
-  // Ensure prefs exist
-  db.run(
-    "INSERT OR IGNORE INTO user_preferences (user_id) VALUES (?)",
-    [userId]
-  );
-  const prefs = db
-    .query<PrefsRow, [string]>(
-      "SELECT * FROM user_preferences WHERE user_id = ?"
-    )
-    .get(userId)!;
+  const prefs = getUserPreferences(c);
 
   const shares = db
     .query<ShareRow, [string]>(
@@ -329,13 +308,23 @@ dashboard.post("/share/text", async (c) => {
     expiresAt,
   });
 
-  // Save preferences
-  db.run(
-    `UPDATE user_preferences SET text_use_password=?, text_ttl_value=?, text_ttl_unit=?, text_one_time=? WHERE user_id=?`,
-    [usePassword ? 1 : 0, ttlValue, ttlUnit, oneTime ? 1 : 0, userId]
-  );
+  // Save preferences to cookie
+  setUserPreferences(c, {
+    text_use_password: usePassword ? 1 : 0,
+    text_ttl_value: ttlValue,
+    text_ttl_unit: ttlUnit,
+    text_one_time: oneTime ? 1 : 0,
+    file_use_password: getUserPreferences(c).file_use_password,
+    file_ttl_value: getUserPreferences(c).file_ttl_value,
+    file_ttl_unit: getUserPreferences(c).file_ttl_unit,
+    file_one_time: getUserPreferences(c).file_one_time,
+  });
 
-  const viewUrl = `${config.baseUrl}/view/${result.id}#${result.key}`;
+  // Build URL with key.passwordToken fragment format when password is set
+  const fragment = result.passwordToken
+    ? `${result.key}.${result.passwordToken}`
+    : result.key;
+  const viewUrl = `${config.baseUrl}/view/${result.id}#${fragment}`;
 
   return c.html(
     <Layout title="Share Created">
@@ -398,13 +387,23 @@ dashboard.post("/share/file", async (c) => {
     expiresAt,
   });
 
-  // Save preferences
-  db.run(
-    `UPDATE user_preferences SET file_use_password=?, file_ttl_value=?, file_ttl_unit=?, file_one_time=? WHERE user_id=?`,
-    [usePassword ? 1 : 0, ttlValue, ttlUnit, oneTime ? 1 : 0, userId]
-  );
+  // Save preferences to cookie
+  setUserPreferences(c, {
+    text_use_password: getUserPreferences(c).text_use_password,
+    text_ttl_value: getUserPreferences(c).text_ttl_value,
+    text_ttl_unit: getUserPreferences(c).text_ttl_unit,
+    text_one_time: getUserPreferences(c).text_one_time,
+    file_use_password: usePassword ? 1 : 0,
+    file_ttl_value: ttlValue,
+    file_ttl_unit: ttlUnit,
+    file_one_time: oneTime ? 1 : 0,
+  });
 
-  const viewUrl = `${config.baseUrl}/view/${result.id}#${result.key}`;
+  // Build URL with key.passwordToken fragment format when password is set
+  const fragment = result.passwordToken
+    ? `${result.key}.${result.passwordToken}`
+    : result.key;
+  const viewUrl = `${config.baseUrl}/view/${result.id}#${fragment}`;
 
   return c.html(
     <Layout title="Share Created">

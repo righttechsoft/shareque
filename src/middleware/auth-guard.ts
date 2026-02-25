@@ -16,7 +16,7 @@ export async function authGuard(c: Context, next: Next) {
 
 export async function sessionGuard(c: Context, next: Next) {
   const session = getSessionFromCookie(c);
-  if (!session) {
+  if (!session || session.is_admin) {
     return c.redirect("/login");
   }
   c.set("session", session);

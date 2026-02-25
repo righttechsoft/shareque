@@ -1,9 +1,13 @@
 import { Hono } from "hono";
 import { serveStatic } from "hono/bun";
+import { bodyLimit } from "hono/body-limit";
 import { config } from "./config";
-import { initSchema } from "./db/schema";
+import { initSchema, runMigrations } from "./db/schema";
 import { startCleanupJob } from "./jobs/cleanup";
 import { clearManageSessions } from "./auth/session";
+import { securityHeaders } from "./middleware/security-headers";
+import { csrfProtection } from "./middleware/csrf";
+import { rateLimit } from "./middleware/rate-limit";
 import manageRoutes from "./routes/admin";
 import authRoutes from "./routes/auth";
 import dashboardRoutes from "./routes/dashboard";
@@ -13,11 +17,44 @@ import { MinimalLayout } from "./views/layout";
 
 // Initialize database
 initSchema();
+runMigrations();
 
 // Clear management sessions on startup (require fresh login each restart)
 clearManageSessions();
 
 const app = new Hono();
+
+// Security headers on all routes
+app.use("*", securityHeaders);
+
+// CSRF protection on all routes
+app.use("*", csrfProtection);
+
+// Default body limit (1MB) on all routes
+app.use("*", bodyLimit({ maxSize: 1024 * 1024 }));
+
+// Higher body limit for file upload routes
+app.use(
+  "/share/file",
+  bodyLimit({ maxSize: config.maxFileSize + 1024 * 1024 })
+);
+app.use(
+  "/upload/*",
+  bodyLimit({ maxSize: config.maxFileSize + 1024 * 1024 })
+);
+
+// Rate limiting on auth endpoints (10 req / 15 min)
+const authRateLimit = rateLimit("auth", { max: 10, windowMs: 15 * 60 * 1000 });
+app.use("/login", authRateLimit);
+app.use("/set-password/*", authRateLimit);
+app.use("/verify-2fa", authRateLimit);
+app.use("/setup-2fa", authRateLimit);
+app.use("/manage/login", authRateLimit);
+app.use("/manage/verify-2fa", authRateLimit);
+app.use("/manage/setup-2fa", authRateLimit);
+
+// Rate limiting on view content endpoint (20 req / 15 min)
+app.use("/view/*/content", rateLimit("view", { max: 20, windowMs: 15 * 60 * 1000 }));
 
 // Static files
 app.use("/style.css", serveStatic({ root: "./public" }));

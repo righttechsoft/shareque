@@ -11,6 +11,11 @@ COPY tsconfig.json ./
 
 RUN mkdir -p data/uploads
 
+RUN addgroup --system appgroup && adduser --system --ingroup appgroup appuser
+RUN chown -R appuser:appgroup data
+
+USER appuser
+
 EXPOSE 3000
 
 CMD ["bun", "run", "src/index.tsx"]
