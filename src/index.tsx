@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import { serveStatic } from "hono/bun";
 import { bodyLimit } from "hono/body-limit";
 import { config } from "./config";
-import { initSchema, runMigrations } from "./db/schema";
+import { initSchema } from "./db/schema";
 import { startCleanupJob } from "./jobs/cleanup";
 import { clearManageSessions } from "./auth/session";
 import { securityHeaders } from "./middleware/security-headers";
@@ -17,7 +17,6 @@ import { MinimalLayout } from "./views/layout";
 
 // Initialize database
 initSchema();
-runMigrations();
 
 // Clear management sessions on startup (require fresh login each restart)
 clearManageSessions();

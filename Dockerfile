@@ -14,9 +14,8 @@ RUN mkdir -p data/uploads
 RUN groupadd --system appgroup && useradd --system --gid appgroup --no-create-home appuser
 RUN chown -R appuser:appgroup data
 
-COPY entrypoint.sh ./
-RUN chmod +x entrypoint.sh
+USER appuser
 
 EXPOSE 3000
 
-ENTRYPOINT ["./entrypoint.sh"]
+CMD ["bun", "run", "src/index.tsx"]

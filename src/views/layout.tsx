@@ -37,9 +37,6 @@ export const Layout: FC<LayoutProps> = ({ title, children, hideNav }) => {
               </ul>
               <ul>
                 <li>
-                  <a href="/dashboard">Dashboard</a>
-                </li>
-                <li>
                   <form method="POST" action="/logout" style="margin:0">
                     <button type="submit" class="outline secondary btn-sm">
                       Logout
