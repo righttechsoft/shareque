@@ -338,13 +338,12 @@ auth.get("/setup-2fa", sessionGuard, async (c) => {
           <button type="submit">Verify & Enable</button>
         </form>
         <hr />
-        <details>
-          <summary>Or use a Security Key (WebAuthn)</summary>
-          <button type="button" id="webauthn-register-btn" class="outline mt-1">
-            Register Security Key
+        <div class="mt-1">
+          <button type="button" id="webauthn-register-btn" class="outline">
+            Or Register a Security Key
           </button>
           <div id="webauthn-status"></div>
-        </details>
+        </div>
       </div>
       <script
         dangerouslySetInnerHTML={{
