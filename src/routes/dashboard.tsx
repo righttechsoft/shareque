@@ -53,8 +53,6 @@ dashboard.get("/dashboard", (c) => {
 
   return c.html(
     <Layout title="Dashboard">
-      <h2>Dashboard</h2>
-
       <div class="tabs">
         <button class="active" data-tab="text">Share Text</button>
         <button data-tab="file">Share File</button>
@@ -88,32 +86,21 @@ dashboard.get("/dashboard", (c) => {
               />{" "}
               One-time view
             </label>
-          </div>
-          <div class="form-row">
-            <label>
-              TTL
+            <div class="ttl-group">
               <input
                 type="number"
                 name="ttl_value"
                 min={0}
                 value={prefs.text_ttl_value.toString()}
-                placeholder="0 = no expiry"
+                placeholder="0"
+                class="ttl-input"
               />
-            </label>
-            <label>
-              Unit
-              <select name="ttl_unit">
-                <option value="minutes" selected={prefs.text_ttl_unit === "minutes"}>
-                  Minutes
-                </option>
-                <option value="hours" selected={prefs.text_ttl_unit === "hours"}>
-                  Hours
-                </option>
-                <option value="days" selected={prefs.text_ttl_unit === "days"}>
-                  Days
-                </option>
+              <select name="ttl_unit" class="ttl-select">
+                <option value="minutes" selected={prefs.text_ttl_unit === "minutes"}>min</option>
+                <option value="hours" selected={prefs.text_ttl_unit === "hours"}>hrs</option>
+                <option value="days" selected={prefs.text_ttl_unit === "days"}>days</option>
               </select>
-            </label>
+            </div>
           </div>
           <div id="password-field-text" style={prefs.text_use_password ? "" : "display:none"}>
             <label>
@@ -151,32 +138,21 @@ dashboard.get("/dashboard", (c) => {
               />{" "}
               One-time view
             </label>
-          </div>
-          <div class="form-row">
-            <label>
-              TTL
+            <div class="ttl-group">
               <input
                 type="number"
                 name="ttl_value"
                 min={0}
                 value={prefs.file_ttl_value.toString()}
-                placeholder="0 = no expiry"
+                placeholder="0"
+                class="ttl-input"
               />
-            </label>
-            <label>
-              Unit
-              <select name="ttl_unit">
-                <option value="minutes" selected={prefs.file_ttl_unit === "minutes"}>
-                  Minutes
-                </option>
-                <option value="hours" selected={prefs.file_ttl_unit === "hours"}>
-                  Hours
-                </option>
-                <option value="days" selected={prefs.file_ttl_unit === "days"}>
-                  Days
-                </option>
+              <select name="ttl_unit" class="ttl-select">
+                <option value="minutes" selected={prefs.file_ttl_unit === "minutes"}>min</option>
+                <option value="hours" selected={prefs.file_ttl_unit === "hours"}>hrs</option>
+                <option value="days" selected={prefs.file_ttl_unit === "days"}>days</option>
               </select>
-            </label>
+            </div>
           </div>
           <div id="password-field-file" style={prefs.file_use_password ? "" : "display:none"}>
             <label>

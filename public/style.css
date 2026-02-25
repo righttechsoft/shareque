@@ -192,6 +192,30 @@
   gap: 1.5rem;
   align-items: center;
   margin-bottom: 1rem;
+  flex-wrap: wrap;
+}
+
+.ttl-group {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  margin-left: auto;
+}
+
+.ttl-input {
+  width: 4.5rem;
+  margin-bottom: 0;
+  padding: 0.25rem 0.4rem;
+  font-size: 0.85rem;
+  height: auto;
+}
+
+.ttl-select {
+  width: 4.5rem;
+  margin-bottom: 0;
+  padding: 0.25rem 0.3rem;
+  font-size: 0.85rem;
+  height: auto;
 }
 
 @media (max-width: 768px) {
