@@ -9,18 +9,6 @@ import { config } from "../config";
 
 const dashboard = new Hono();
 
-interface ShareRow {
-  id: string;
-  type: string;
-  has_password: number;
-  max_views: number | null;
-  view_count: number;
-  is_consumed: number;
-  expires_at: number | null;
-  created_at: number;
-  file_name: string | null;
-}
-
 interface UploadReqRow {
   id: string;
   token: string;
@@ -39,12 +27,6 @@ dashboard.get("/dashboard", (c) => {
 
   const prefs = getUserPreferences(c);
 
-  const shares = db
-    .query<ShareRow, [string]>(
-      "SELECT id, type, has_password, max_views, view_count, is_consumed, expires_at, created_at, file_name FROM shares WHERE user_id = ? ORDER BY created_at DESC LIMIT 50"
-    )
-    .all(userId);
-
   const uploadReqs = db
     .query<UploadReqRow, [string]>(
       "SELECT * FROM upload_requests WHERE user_id = ? ORDER BY created_at DESC LIMIT 20"
@@ -57,7 +39,6 @@ dashboard.get("/dashboard", (c) => {
         <button class="active" data-tab="text">Share Text</button>
         <button data-tab="file">Share File</button>
         <button data-tab="request">Request Data</button>
-        <button data-tab="history">History</button>
       </div>
 
       {/* Text Share Tab */}
@@ -207,47 +188,6 @@ dashboard.get("/dashboard", (c) => {
               </tbody>
             </table>
           </div>
-        )}
-      </div>
-
-      {/* History Tab */}
-      <div class="tab-content" id="tab-history">
-        {shares.length === 0 ? (
-          <p class="text-muted text-center mt-2">No shares yet.</p>
-        ) : (
-          <table>
-            <thead>
-              <tr>
-                <th>Type</th>
-                <th>ID</th>
-                <th>Views</th>
-                <th>Status</th>
-                <th>Created</th>
-              </tr>
-            </thead>
-            <tbody>
-              {shares.map((s) => (
-                <tr>
-                  <td>{s.type === "file" ? (s.file_name || "File") : "Text"}</td>
-                  <td>
-                    <code>{s.id}</code>
-                  </td>
-                  <td>
-                    {s.view_count}
-                    {s.max_views ? ` / ${s.max_views}` : ""}
-                  </td>
-                  <td>
-                    {s.is_consumed
-                      ? "Consumed"
-                      : s.expires_at && s.expires_at <= Math.floor(Date.now() / 1000)
-                        ? "Expired"
-                        : "Active"}
-                  </td>
-                  <td>{new Date(s.created_at * 1000).toLocaleString()}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
         )}
       </div>
     </Layout>
