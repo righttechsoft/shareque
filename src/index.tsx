@@ -29,18 +29,12 @@ app.use("*", securityHeaders);
 // CSRF protection on all routes
 app.use("*", csrfProtection);
 
-// Default body limit (1MB) on all routes
-app.use("*", bodyLimit({ maxSize: 1024 * 1024 }));
-
-// Higher body limit for file upload routes
-app.use(
-  "/share/file",
-  bodyLimit({ maxSize: config.maxFileSize + 1024 * 1024 })
-);
-app.use(
-  "/upload/*",
-  bodyLimit({ maxSize: config.maxFileSize + 1024 * 1024 })
-);
+// Body limits: higher for file upload routes, 1MB default for everything else
+const fileLimit = bodyLimit({ maxSize: config.maxFileSize + 1024 * 1024 });
+const defaultLimit = bodyLimit({ maxSize: 1024 * 1024 });
+app.use("/share/file", fileLimit);
+app.use("/upload/*", fileLimit);
+app.use("*", defaultLimit);
 
 // Rate limiting on auth endpoints (10 req / 15 min)
 const authRateLimit = rateLimit("auth", { max: 10, windowMs: 15 * 60 * 1000 });
