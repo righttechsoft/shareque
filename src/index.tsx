@@ -30,11 +30,15 @@ app.use("*", securityHeaders);
 app.use("*", csrfProtection);
 
 // Body limits: higher for file upload routes, 1MB default for everything else
-const fileLimit = bodyLimit({ maxSize: config.maxFileSize + 1024 * 1024 });
-const defaultLimit = bodyLimit({ maxSize: 1024 * 1024 });
-app.use("/share/file", fileLimit);
-app.use("/upload/*", fileLimit);
-app.use("*", defaultLimit);
+const fileLimitMw = bodyLimit({ maxSize: config.maxFileSize + 1024 * 1024 });
+const defaultLimitMw = bodyLimit({ maxSize: 1024 * 1024 });
+app.use("*", (c, next) => {
+  const path = c.req.path;
+  if (path === "/share/file" || path.startsWith("/upload/")) {
+    return fileLimitMw(c, next);
+  }
+  return defaultLimitMw(c, next);
+});
 
 // Rate limiting on auth endpoints (10 req / 15 min)
 const authRateLimit = rateLimit("auth", { max: 10, windowMs: 15 * 60 * 1000 });
