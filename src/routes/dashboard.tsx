@@ -9,6 +9,29 @@ import { config } from "../config";
 
 const dashboard = new Hono();
 
+const PRESET_HOURS: Record<string, number> = {
+  "1h": 1,
+  "24h": 24,
+  "168h": 168,
+  "720h": 720,
+  "8760h": 8760,
+  "0": 0,
+};
+
+function parseTtl(body: Record<string, any>): number | undefined {
+  const preset = body.ttl_preset as string;
+  if (preset === "custom") {
+    const val = parseInt(body.ttl_value as string, 10) || 0;
+    const unit = body.ttl_unit as string;
+    if (val <= 0) return undefined;
+    const multiplier = unit === "days" ? 86400 : unit === "hours" ? 3600 : 60;
+    return Math.floor(Date.now() / 1000) + val * multiplier;
+  }
+  const hours = PRESET_HOURS[preset];
+  if (!hours) return undefined;
+  return Math.floor(Date.now() / 1000) + hours * 3600;
+}
+
 interface UploadReqRow {
   id: string;
   token: string;
@@ -68,19 +91,24 @@ dashboard.get("/dashboard", (c) => {
               One-time view
             </label>
             <div class="ttl-group">
-              <input
-                type="number"
-                name="ttl_value"
-                min={0}
-                value={prefs.text_ttl_value.toString()}
-                placeholder="0"
-              />
-              <select name="ttl_unit">
-                <option value="minutes" selected={prefs.text_ttl_unit === "minutes"}>min</option>
-                <option value="hours" selected={prefs.text_ttl_unit === "hours"}>hrs</option>
-                <option value="days" selected={prefs.text_ttl_unit === "days"}>days</option>
+              <select name="ttl_preset">
+                <option value="1h" selected={prefs.text_ttl_preset === "1h"}>1 hour</option>
+                <option value="24h" selected={!prefs.text_ttl_preset || prefs.text_ttl_preset === "24h"}>1 day</option>
+                <option value="168h" selected={prefs.text_ttl_preset === "168h"}>1 week</option>
+                <option value="720h" selected={prefs.text_ttl_preset === "720h"}>1 month</option>
+                <option value="8760h" selected={prefs.text_ttl_preset === "8760h"}>1 year</option>
+                <option value="0" selected={prefs.text_ttl_preset === "0"}>No expiry</option>
+                <option value="custom" selected={prefs.text_ttl_preset === "custom"}>Custom...</option>
               </select>
             </div>
+          </div>
+          <div class="custom-ttl-row" id="custom-ttl-text" style={prefs.text_ttl_preset === "custom" ? "" : "display:none"}>
+            <input type="number" name="ttl_value" min={1} value={prefs.text_ttl_value?.toString() || "1"} class="ttl-custom-input" />
+            <select name="ttl_unit" class="ttl-custom-select">
+              <option value="minutes" selected={prefs.text_ttl_unit === "minutes"}>minutes</option>
+              <option value="hours" selected={!prefs.text_ttl_unit || prefs.text_ttl_unit === "hours"}>hours</option>
+              <option value="days" selected={prefs.text_ttl_unit === "days"}>days</option>
+            </select>
           </div>
           <div id="password-field-text" style={prefs.text_use_password ? "" : "display:none"}>
             <label>
@@ -119,19 +147,24 @@ dashboard.get("/dashboard", (c) => {
               One-time view
             </label>
             <div class="ttl-group">
-              <input
-                type="number"
-                name="ttl_value"
-                min={0}
-                value={prefs.file_ttl_value.toString()}
-                placeholder="0"
-              />
-              <select name="ttl_unit">
-                <option value="minutes" selected={prefs.file_ttl_unit === "minutes"}>min</option>
-                <option value="hours" selected={prefs.file_ttl_unit === "hours"}>hrs</option>
-                <option value="days" selected={prefs.file_ttl_unit === "days"}>days</option>
+              <select name="ttl_preset">
+                <option value="1h" selected={prefs.file_ttl_preset === "1h"}>1 hour</option>
+                <option value="24h" selected={!prefs.file_ttl_preset || prefs.file_ttl_preset === "24h"}>1 day</option>
+                <option value="168h" selected={prefs.file_ttl_preset === "168h"}>1 week</option>
+                <option value="720h" selected={prefs.file_ttl_preset === "720h"}>1 month</option>
+                <option value="8760h" selected={prefs.file_ttl_preset === "8760h"}>1 year</option>
+                <option value="0" selected={prefs.file_ttl_preset === "0"}>No expiry</option>
+                <option value="custom" selected={prefs.file_ttl_preset === "custom"}>Custom...</option>
               </select>
             </div>
+          </div>
+          <div class="custom-ttl-row" id="custom-ttl-file" style={prefs.file_ttl_preset === "custom" ? "" : "display:none"}>
+            <input type="number" name="ttl_value" min={1} value={prefs.file_ttl_value?.toString() || "1"} class="ttl-custom-input" />
+            <select name="ttl_unit" class="ttl-custom-select">
+              <option value="minutes" selected={prefs.file_ttl_unit === "minutes"}>minutes</option>
+              <option value="hours" selected={!prefs.file_ttl_unit || prefs.file_ttl_unit === "hours"}>hours</option>
+              <option value="days" selected={prefs.file_ttl_unit === "days"}>days</option>
+            </select>
           </div>
           <div id="password-field-file" style={prefs.file_use_password ? "" : "display:none"}>
             <label>
@@ -202,17 +235,13 @@ dashboard.post("/share/text", async (c) => {
   const usePassword = body.use_password === "1";
   const password = (body.password as string) || undefined;
   const oneTime = body.one_time === "1";
+  const ttlPreset = (body.ttl_preset as string) || "24h";
   const ttlValue = parseInt(body.ttl_value as string, 10) || 0;
-  const ttlUnit = body.ttl_unit as string;
+  const ttlUnit = (body.ttl_unit as string) || "hours";
 
   if (!text?.trim()) return c.redirect("/dashboard");
 
-  let expiresAt: number | undefined;
-  if (ttlValue > 0) {
-    const multiplier =
-      ttlUnit === "days" ? 86400 : ttlUnit === "hours" ? 3600 : 60;
-    expiresAt = Math.floor(Date.now() / 1000) + ttlValue * multiplier;
-  }
+  const expiresAt = parseTtl(body);
 
   const result = await createTextShare({
     userId,
@@ -223,15 +252,14 @@ dashboard.post("/share/text", async (c) => {
   });
 
   // Save preferences to cookie
+  const prev = getUserPreferences(c);
   setUserPreferences(c, {
+    ...prev,
     text_use_password: usePassword ? 1 : 0,
+    text_ttl_preset: ttlPreset,
     text_ttl_value: ttlValue,
     text_ttl_unit: ttlUnit,
     text_one_time: oneTime ? 1 : 0,
-    file_use_password: getUserPreferences(c).file_use_password,
-    file_ttl_value: getUserPreferences(c).file_ttl_value,
-    file_ttl_unit: getUserPreferences(c).file_ttl_unit,
-    file_one_time: getUserPreferences(c).file_one_time,
   });
 
   // Build URL with key.passwordToken fragment format when password is set
@@ -266,8 +294,9 @@ dashboard.post("/share/file", async (c) => {
   const usePassword = body.use_password === "1";
   const password = (body.password as string) || undefined;
   const oneTime = body.one_time === "1";
+  const ttlPreset = (body.ttl_preset as string) || "24h";
   const ttlValue = parseInt(body.ttl_value as string, 10) || 0;
-  const ttlUnit = body.ttl_unit as string;
+  const ttlUnit = (body.ttl_unit as string) || "hours";
 
   if (!file || file.size === 0) return c.redirect("/dashboard");
   if (file.size > config.maxFileSize) {
@@ -281,12 +310,7 @@ dashboard.post("/share/file", async (c) => {
     );
   }
 
-  let expiresAt: number | undefined;
-  if (ttlValue > 0) {
-    const multiplier =
-      ttlUnit === "days" ? 86400 : ttlUnit === "hours" ? 3600 : 60;
-    expiresAt = Math.floor(Date.now() / 1000) + ttlValue * multiplier;
-  }
+  const expiresAt = parseTtl(body);
 
   const fileBuffer = Buffer.from(await file.arrayBuffer());
 
@@ -302,12 +326,11 @@ dashboard.post("/share/file", async (c) => {
   });
 
   // Save preferences to cookie
+  const prev = getUserPreferences(c);
   setUserPreferences(c, {
-    text_use_password: getUserPreferences(c).text_use_password,
-    text_ttl_value: getUserPreferences(c).text_ttl_value,
-    text_ttl_unit: getUserPreferences(c).text_ttl_unit,
-    text_one_time: getUserPreferences(c).text_one_time,
+    ...prev,
     file_use_password: usePassword ? 1 : 0,
+    file_ttl_preset: ttlPreset,
     file_ttl_value: ttlValue,
     file_ttl_unit: ttlUnit,
     file_one_time: oneTime ? 1 : 0,

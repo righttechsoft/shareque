@@ -12,10 +12,12 @@ const PREFS_TTL = 365 * 24 * 60 * 60; // 1 year
 
 export interface UserPreferences {
   text_use_password: number;
+  text_ttl_preset: string;
   text_ttl_value: number;
   text_ttl_unit: string;
   text_one_time: number;
   file_use_password: number;
+  file_ttl_preset: string;
   file_ttl_value: number;
   file_ttl_unit: string;
   file_one_time: number;
@@ -23,11 +25,13 @@ export interface UserPreferences {
 
 export const DEFAULT_PREFS: UserPreferences = {
   text_use_password: 0,
-  text_ttl_value: 24,
+  text_ttl_preset: "24h",
+  text_ttl_value: 1,
   text_ttl_unit: "hours",
   text_one_time: 0,
   file_use_password: 0,
-  file_ttl_value: 24,
+  file_ttl_preset: "24h",
+  file_ttl_value: 1,
   file_ttl_unit: "hours",
   file_one_time: 0,
 };

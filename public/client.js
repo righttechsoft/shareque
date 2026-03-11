@@ -40,6 +40,16 @@ document.querySelectorAll('input[name="use_password"]').forEach(cb => {
   });
 });
 
+// === TTL preset toggle ===
+document.querySelectorAll('select[name="ttl_preset"]').forEach(sel => {
+  const form = sel.closest('form');
+  const customRow = form?.querySelector('.custom-ttl-row');
+  if (!customRow) return;
+  sel.addEventListener('change', () => {
+    customRow.style.display = sel.value === 'custom' ? '' : 'none';
+  });
+});
+
 // === Share View Page ===
 (function initViewPage() {
   const ctx = window.__shareContext;
