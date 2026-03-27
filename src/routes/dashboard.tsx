@@ -268,41 +268,39 @@ dashboard.get("/dashboard", (c) => {
               </details>
             </div>
 
-            {storedItems.length > 0 ? (
-              <table class="mt-2">
-                <thead>
-                  <tr>
-                    <th>Title</th>
-                    <th>Type</th>
-                    <th>Size</th>
-                    <th>Updated</th>
-                    <th>Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {storedItems.map((item: StoredDataListItem) => (
-                    <tr>
-                      <td>{item.title}</td>
-                      <td>{item.type === "note" ? "Note" : item.file_name || "File"}</td>
-                      <td>{item.type === "file" && item.file_size ? formatSize(item.file_size) : "-"}</td>
-                      <td>{new Date(item.updated_at * 1000).toLocaleString()}</td>
-                      <td class="stored-actions">
-                        {item.type === "note" ? (
-                          <a href={`/stored/note/${item.id}`} class="btn-sm">Edit</a>
-                        ) : (
-                          <a href={`/stored/file/${item.id}`} class="btn-sm">Download</a>
-                        )}
-                        <form method="POST" action={`/stored/delete/${item.id}`} style="display:inline" onsubmit="return confirm('Delete this item?')">
-                          <button type="submit" class="btn-sm outline secondary">Delete</button>
-                        </form>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            ) : (
-              <p class="text-muted mt-2">No stored data yet.</p>
-            )}
+            <div class="stored-panel">
+              <div class="stored-list">
+                {storedItems.length > 0 ? (
+                  <ul>
+                    {storedItems.map((item: StoredDataListItem) => (
+                      <li>
+                        <button
+                          type="button"
+                          class="stored-list-item"
+                          data-id={item.id}
+                          data-type={item.type}
+                        >
+                          <span class="stored-item-icon">{item.type === "note" ? "\u{1F4DD}" : "\u{1F4CE}"}</span>
+                          <span class="stored-item-info">
+                            <strong>{item.title}</strong>
+                            <small>
+                              {item.type === "file" && item.file_size ? formatSize(item.file_size) : "Note"}
+                              {" \u00B7 "}
+                              {new Date(item.updated_at * 1000).toLocaleDateString()}
+                            </small>
+                          </span>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p class="text-muted" style="padding:1rem">No stored data yet.</p>
+                )}
+              </div>
+              <div class="stored-content" id="stored-content">
+                <p class="text-muted">Select an item to view its content.</p>
+              </div>
+            </div>
           </>
         )}
       </div>

@@ -122,6 +122,33 @@ stored.post("/stored/file", async (c) => {
   return c.redirect("/dashboard");
 });
 
+// --- Get content (JSON API for inline viewing) ---
+stored.get("/stored/content/:id", (c) => {
+  const userId = c.get("userId") as string;
+  const userToken = requireToken(c);
+  if (!userToken) return c.json({ error: "Token not available" }, 400);
+
+  const id = c.req.param("id");
+  const note = getNote(id, userId, userToken);
+  if (note) {
+    return c.json({ type: "note", id, title: note.title, content: note.content });
+  }
+
+  const file = getStoredFile(id, userId, userToken);
+  if (file) {
+    return c.json({
+      type: "file",
+      id,
+      title: file.title,
+      fileName: file.fileName,
+      fileMime: file.fileMime,
+      fileSize: file.fileSize,
+    });
+  }
+
+  return c.json({ error: "Not found" }, 404);
+});
+
 // --- Download Stored File ---
 stored.get("/stored/file/:id", (c) => {
   const userId = c.get("userId") as string;

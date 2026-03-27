@@ -50,6 +50,130 @@ document.querySelectorAll('select[name="ttl_preset"]').forEach(sel => {
   });
 });
 
+// === Stored Data Panel ===
+(function initStoredPanel() {
+  const listItems = document.querySelectorAll('.stored-list-item');
+  const contentArea = document.getElementById('stored-content');
+  if (!listItems.length || !contentArea) return;
+
+  listItems.forEach(btn => {
+    btn.addEventListener('click', () => {
+      // Mark active
+      listItems.forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+
+      const id = btn.dataset.id;
+      const type = btn.dataset.type;
+      loadStoredContent(id, type);
+    });
+  });
+
+  async function loadStoredContent(id, type) {
+    contentArea.innerHTML = '<p class="text-muted">Loading...</p>';
+
+    try {
+      const res = await fetch(`/stored/content/${id}`);
+      if (!res.ok) throw new Error('Failed to load');
+      const data = await res.json();
+
+      if (data.type === 'note') {
+        renderNote(data);
+      } else {
+        renderFile(data);
+      }
+    } catch (err) {
+      contentArea.innerHTML = '<div class="alert alert-error">Failed to load content.</div>';
+    }
+  }
+
+  function renderNote(data) {
+    contentArea.innerHTML = '';
+
+    const title = document.createElement('h3');
+    title.textContent = data.title;
+    title.style.marginTop = '0';
+    contentArea.appendChild(title);
+
+    const pre = document.createElement('pre');
+    pre.textContent = data.content;
+    contentArea.appendChild(pre);
+
+    const actions = document.createElement('div');
+    actions.className = 'stored-content-actions';
+
+    const editBtn = document.createElement('a');
+    editBtn.href = `/stored/note/${data.id}`;
+    editBtn.className = 'outline btn-sm';
+    editBtn.role = 'button';
+    editBtn.textContent = 'Edit';
+    actions.appendChild(editBtn);
+
+    const copyBtn = document.createElement('button');
+    copyBtn.className = 'outline btn-sm';
+    copyBtn.textContent = 'Copy';
+    copyBtn.addEventListener('click', () => {
+      navigator.clipboard.writeText(data.content).then(() => {
+        copyBtn.textContent = 'Copied!';
+        setTimeout(() => copyBtn.textContent = 'Copy', 2000);
+      });
+    });
+    actions.appendChild(copyBtn);
+
+    appendDeleteBtn(actions, data.id);
+    contentArea.appendChild(actions);
+  }
+
+  function renderFile(data) {
+    contentArea.innerHTML = '';
+
+    const title = document.createElement('h3');
+    title.textContent = data.title;
+    title.style.marginTop = '0';
+    contentArea.appendChild(title);
+
+    const info = document.createElement('div');
+    info.className = 'stored-file-info';
+    info.innerHTML =
+      '<p><strong>' + escapeHtml(data.fileName) + '</strong></p>' +
+      '<p class="file-meta">' + escapeHtml(data.fileMime) + ' &middot; ' + formatSize(data.fileSize) + '</p>';
+    contentArea.appendChild(info);
+
+    const actions = document.createElement('div');
+    actions.className = 'stored-content-actions';
+
+    const dlBtn = document.createElement('a');
+    dlBtn.href = `/stored/file/${data.id}`;
+    dlBtn.className = 'outline btn-sm';
+    dlBtn.role = 'button';
+    dlBtn.textContent = 'Download';
+    actions.appendChild(dlBtn);
+
+    appendDeleteBtn(actions, data.id);
+    contentArea.appendChild(actions);
+  }
+
+  function appendDeleteBtn(container, id) {
+    const btn = document.createElement('button');
+    btn.className = 'outline secondary btn-sm';
+    btn.textContent = 'Delete';
+    btn.addEventListener('click', async () => {
+      if (!confirm('Delete this item?')) return;
+      const form = document.createElement('form');
+      form.method = 'POST';
+      form.action = `/stored/delete/${id}`;
+      document.body.appendChild(form);
+      form.submit();
+    });
+    container.appendChild(btn);
+  }
+
+  function formatSize(bytes) {
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+    return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+  }
+})();
+
 // === Share View Page ===
 (function initViewPage() {
   const ctx = window.__shareContext;
@@ -76,7 +200,7 @@ document.querySelectorAll('select[name="ttl_preset"]').forEach(sel => {
   if (ctx.hasPassword) {
     // Wait for password submission
     const submitBtn = document.getElementById('submit-password');
-    const pwInput = document.getElementById('share-password');
+    const pwInput = document.getElementById('sq-unlock');
 
     if (submitBtn) {
       const doSubmit = () => fetchContent(encryptionKey, pwInput?.value, passwordToken);
@@ -230,10 +354,14 @@ document.querySelectorAll('select[name="ttl_preset"]').forEach(sel => {
     btn.className = 'outline btn-sm';
     btn.textContent = 'Save to my data';
     btn.addEventListener('click', async () => {
+      const defaultTitle = ctx.fileName || 'Saved share';
+      const title = prompt('Title for saved item:', defaultTitle);
+      if (!title) return;
+
       btn.disabled = true;
       btn.textContent = 'Saving...';
       try {
-        const bodyObj = { key };
+        const bodyObj = { key, title };
         if (password) bodyObj.password = password;
         if (pwToken) bodyObj.passwordToken = pwToken;
 
