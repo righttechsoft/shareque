@@ -18,23 +18,23 @@ function requireToken(c: any): Buffer | null {
 stored.post("/stored/note", async (c) => {
   const userId = c.get("userId") as string;
   const userToken = requireToken(c);
-  if (!userToken) return c.redirect("/dashboard");
+  if (!userToken) return c.redirect("/dashboard?tab=stored");
 
   const body = await c.req.parseBody();
   const title = (body.title as string)?.trim();
   const content = body.content as string;
 
-  if (!title || !content?.trim()) return c.redirect("/dashboard");
+  if (!title || !content?.trim()) return c.redirect("/dashboard?tab=stored");
 
   createNote({ userId, title, content, userToken });
-  return c.redirect("/dashboard");
+  return c.redirect("/dashboard?tab=stored");
 });
 
 // --- View/Edit Note ---
 stored.get("/stored/note/:id", (c) => {
   const userId = c.get("userId") as string;
   const userToken = requireToken(c);
-  if (!userToken) return c.redirect("/dashboard");
+  if (!userToken) return c.redirect("/dashboard?tab=stored");
 
   const id = c.req.param("id");
   const note = getNote(id, userId, userToken);
@@ -73,7 +73,7 @@ stored.get("/stored/note/:id", (c) => {
 stored.post("/stored/note/:id", async (c) => {
   const userId = c.get("userId") as string;
   const userToken = requireToken(c);
-  if (!userToken) return c.redirect("/dashboard");
+  if (!userToken) return c.redirect("/dashboard?tab=stored");
 
   const id = c.req.param("id");
   const body = await c.req.parseBody();
@@ -83,20 +83,20 @@ stored.post("/stored/note/:id", async (c) => {
   if (!title || !content?.trim()) return c.redirect(`/stored/note/${id}`);
 
   updateNote(id, userId, title, content, userToken);
-  return c.redirect("/dashboard");
+  return c.redirect("/dashboard?tab=stored");
 });
 
 // --- Upload Stored File ---
 stored.post("/stored/file", async (c) => {
   const userId = c.get("userId") as string;
   const userToken = requireToken(c);
-  if (!userToken) return c.redirect("/dashboard");
+  if (!userToken) return c.redirect("/dashboard?tab=stored");
 
   const body = await c.req.parseBody();
   const title = (body.title as string)?.trim();
   const file = body.file as File;
 
-  if (!title || !file || file.size === 0) return c.redirect("/dashboard");
+  if (!title || !file || file.size === 0) return c.redirect("/dashboard?tab=stored");
   if (file.size > config.maxFileSize) {
     return c.html(
       <Layout title="Error">
@@ -119,7 +119,7 @@ stored.post("/stored/file", async (c) => {
     userToken,
   });
 
-  return c.redirect("/dashboard");
+  return c.redirect("/dashboard?tab=stored");
 });
 
 // --- Get content (JSON API for inline viewing) ---
@@ -153,7 +153,7 @@ stored.get("/stored/content/:id", (c) => {
 stored.get("/stored/file/:id", (c) => {
   const userId = c.get("userId") as string;
   const userToken = requireToken(c);
-  if (!userToken) return c.redirect("/dashboard");
+  if (!userToken) return c.redirect("/dashboard?tab=stored");
 
   const id = c.req.param("id");
   const file = getStoredFile(id, userId, userToken);
@@ -181,7 +181,7 @@ stored.post("/stored/delete/:id", (c) => {
   const userId = c.get("userId") as string;
   const id = c.req.param("id");
   deleteStoredItem(id, userId);
-  return c.redirect("/dashboard");
+  return c.redirect("/dashboard?tab=stored");
 });
 
 export default stored;

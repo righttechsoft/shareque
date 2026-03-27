@@ -1,19 +1,27 @@
 // === Tab switching ===
+function activateTab(tabId) {
+  const tabBtn = document.querySelector(`.tabs button[data-tab="${tabId}"]`);
+  if (!tabBtn) return;
+  const parent = tabBtn.closest('.tabs').parentElement;
+
+  tabBtn.closest('.tabs').querySelectorAll('button').forEach(b => b.classList.remove('active'));
+  parent.querySelectorAll('.tab-content').forEach(tc => tc.classList.remove('active'));
+
+  tabBtn.classList.add('active');
+  const target = parent.querySelector(`#tab-${tabId}`);
+  if (target) target.classList.add('active');
+}
+
 document.querySelectorAll('.tabs button[data-tab]').forEach(btn => {
-  btn.addEventListener('click', () => {
-    const tabId = btn.dataset.tab;
-    const parent = btn.closest('.tabs').parentElement;
-
-    // Deactivate all tabs and content
-    btn.closest('.tabs').querySelectorAll('button').forEach(b => b.classList.remove('active'));
-    parent.querySelectorAll('.tab-content').forEach(tc => tc.classList.remove('active'));
-
-    // Activate clicked tab
-    btn.classList.add('active');
-    const target = parent.querySelector(`#tab-${tabId}`);
-    if (target) target.classList.add('active');
-  });
+  btn.addEventListener('click', () => activateTab(btn.dataset.tab));
 });
+
+// Activate tab from ?tab= query param
+(function() {
+  const params = new URLSearchParams(location.search);
+  const tab = params.get('tab');
+  if (tab) activateTab(tab);
+})();
 
 // === Copy to clipboard ===
 document.querySelectorAll('.copy-btn').forEach(btn => {
