@@ -67,7 +67,7 @@ view.get("/:id", (c) => {
             <p>This share is password protected.</p>
             <label>
               Password
-              <input type="password" id="share-password" autofocus />
+              <input type="text" id="share-password" class="input-secret" autocomplete="off" autofocus />
             </label>
             <button type="button" id="submit-password">Unlock</button>
             <div id="password-error" class="alert alert-error" style="display:none"></div>

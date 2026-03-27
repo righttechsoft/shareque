@@ -61,6 +61,9 @@ auth.get("/login", (c) => {
             Password
             <input type="password" name="password" required />
           </label>
+          <label>
+            <input type="checkbox" name="remember_me" value="1" /> Remember me for 30 days
+          </label>
           <button type="submit">Login</button>
         </form>
       </div>
@@ -72,6 +75,7 @@ auth.post("/login", async (c) => {
   const body = await c.req.parseBody();
   const email = (body.email as string)?.trim();
   const password = body.password as string;
+  const rememberMe = body.remember_me === "1";
 
   if (!email || !password) {
     return c.html(
@@ -87,6 +91,9 @@ auth.post("/login", async (c) => {
             <label>
               Password
               <input type="password" name="password" required />
+            </label>
+            <label>
+              <input type="checkbox" name="remember_me" value="1" checked={rememberMe} /> Remember me for 30 days
             </label>
             <button type="submit">Login</button>
           </form>
@@ -114,6 +121,9 @@ auth.post("/login", async (c) => {
               Password
               <input type="password" name="password" required />
             </label>
+            <label>
+              <input type="checkbox" name="remember_me" value="1" checked={rememberMe} /> Remember me for 30 days
+            </label>
             <button type="submit">Login</button>
           </form>
         </div>
@@ -137,6 +147,9 @@ auth.post("/login", async (c) => {
               Password
               <input type="password" name="password" required />
             </label>
+            <label>
+              <input type="checkbox" name="remember_me" value="1" checked={rememberMe} /> Remember me for 30 days
+            </label>
             <button type="submit">Login</button>
           </form>
         </div>
@@ -144,8 +157,8 @@ auth.post("/login", async (c) => {
     );
   }
 
-  const sessionId = createSession(user.id, false);
-  setSessionCookie(c, sessionId);
+  const sessionId = createSession(user.id, false, rememberMe);
+  setSessionCookie(c, sessionId, rememberMe ? 30 * 24 * 60 * 60 : undefined);
 
   if (!user.tfa_method) {
     return c.redirect("/setup-2fa");
@@ -193,11 +206,11 @@ auth.get("/set-password/:token", (c) => {
         <form method="POST" action={`/set-password/${token}`}>
           <label>
             Password
-            <input type="password" name="password" required minLength={12} autofocus />
+            <input type="password" name="password" required minLength={12} autocomplete="new-password" autofocus />
           </label>
           <label>
             Confirm Password
-            <input type="password" name="confirm" required minLength={12} />
+            <input type="password" name="confirm" required minLength={12} autocomplete="new-password" />
           </label>
           <button type="submit">Set Password</button>
         </form>
@@ -241,11 +254,11 @@ auth.post("/set-password/:token", async (c) => {
           <form method="POST" action={`/set-password/${token}`}>
             <label>
               Password
-              <input type="password" name="password" required minLength={12} autofocus />
+              <input type="password" name="password" required minLength={12} autocomplete="new-password" autofocus />
             </label>
             <label>
               Confirm Password
-              <input type="password" name="confirm" required minLength={12} />
+              <input type="password" name="confirm" required minLength={12} autocomplete="new-password" />
             </label>
             <button type="submit">Set Password</button>
           </form>
@@ -266,11 +279,11 @@ auth.post("/set-password/:token", async (c) => {
           <form method="POST" action={`/set-password/${token}`}>
             <label>
               Password
-              <input type="password" name="password" required minLength={12} autofocus />
+              <input type="password" name="password" required minLength={12} autocomplete="new-password" autofocus />
             </label>
             <label>
               Confirm Password
-              <input type="password" name="confirm" required minLength={12} />
+              <input type="password" name="confirm" required minLength={12} autocomplete="new-password" />
             </label>
             <button type="submit">Set Password</button>
           </form>

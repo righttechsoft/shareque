@@ -8,6 +8,7 @@ import { setCookie, getCookie, deleteCookie } from "hono/cookie";
 const SESSION_COOKIE = "sq_session";
 const PREFS_COOKIE = "sq_prefs";
 const SESSION_TTL = 24 * 60 * 60; // 24 hours
+const REMEMBER_ME_TTL = 30 * 24 * 60 * 60; // 30 days
 const PREFS_TTL = 365 * 24 * 60 * 60; // 1 year
 
 export interface UserPreferences {
@@ -65,10 +66,12 @@ interface Session {
 
 export function createSession(
   userId: string | null,
-  isAdmin: boolean
+  isAdmin: boolean,
+  rememberMe: boolean = false
 ): string {
   const id = randomBytes(32).toString("hex");
-  const expiresAt = Math.floor(Date.now() / 1000) + SESSION_TTL;
+  const ttl = rememberMe ? REMEMBER_ME_TTL : SESSION_TTL;
+  const expiresAt = Math.floor(Date.now() / 1000) + ttl;
   db.run(
     "INSERT INTO sessions (id, user_id, is_admin, tfa_verified, expires_at) VALUES (?, ?, ?, 0, ?)",
     [id, userId, isAdmin ? 1 : 0, expiresAt]
@@ -93,13 +96,13 @@ export function deleteSession(sessionId: string): void {
   db.run("DELETE FROM sessions WHERE id = ?", [sessionId]);
 }
 
-export function setSessionCookie(c: Context, sessionId: string): void {
+export function setSessionCookie(c: Context, sessionId: string, maxAge?: number): void {
   setCookie(c, SESSION_COOKIE, sessionId, {
     httpOnly: true,
     secure: c.req.url.startsWith("https"),
     sameSite: "Lax",
     path: "/",
-    maxAge: SESSION_TTL,
+    maxAge: maxAge ?? SESSION_TTL,
   });
 }
 

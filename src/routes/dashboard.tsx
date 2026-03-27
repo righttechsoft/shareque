@@ -113,7 +113,7 @@ dashboard.get("/dashboard", (c) => {
           <div id="password-field-text" style={prefs.text_use_password ? "" : "display:none"}>
             <label>
               Password
-              <input type="password" name="password" />
+              <input type="text" name="password" class="input-secret" autocomplete="off" />
             </label>
           </div>
           <button type="submit" class="mt-1">Share</button>
@@ -169,7 +169,7 @@ dashboard.get("/dashboard", (c) => {
           <div id="password-field-file" style={prefs.file_use_password ? "" : "display:none"}>
             <label>
               Password
-              <input type="password" name="password" />
+              <input type="text" name="password" class="input-secret" autocomplete="off" />
             </label>
           </div>
           <button type="submit" class="mt-1">Upload & Share</button>

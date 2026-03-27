@@ -2,6 +2,11 @@
   --pico-font-size: 16px;
 }
 
+.input-secret {
+  -webkit-text-security: disc;
+  text-security: disc;
+}
+
 .nav-brand {
   text-decoration: none;
   display: flex;
