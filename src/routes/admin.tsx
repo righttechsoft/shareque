@@ -10,6 +10,7 @@ import {
   deleteSession,
   clearSessionCookie,
 } from "../auth/session";
+import { cleanupUserStoredFiles } from "../services/stored-data";
 import { generateTotpSecret, getTotpUri, generateQrDataUrl, verifyTotp } from "../auth/totp";
 import {
   generateRegOptions,
@@ -415,17 +416,22 @@ manage.post("/resend-invite/:id", manageGuard, async (c) => {
   const inviteToken = nanoid(32);
   const inviteExpiresAt = Math.floor(Date.now() / 1000) + 48 * 3600;
 
-  // Reset password, 2FA, and set new invite token
+  // Reset password, 2FA, token, and set new invite token
   db.run(
     `UPDATE users SET
        password_hash = NULL,
        totp_secret = NULL,
        tfa_method = NULL,
+       encrypted_token = NULL,
        invite_token = ?,
        invite_expires_at = ?
      WHERE id = ?`,
     [inviteToken, inviteExpiresAt, userId]
   );
+
+  // Delete stored data (old token is unrecoverable)
+  cleanupUserStoredFiles(userId);
+  db.run("DELETE FROM stored_data WHERE user_id = ?", [userId]);
 
   // Delete existing sessions for this user
   db.run("DELETE FROM sessions WHERE user_id = ?", [userId]);
@@ -445,6 +451,7 @@ manage.post("/resend-invite/:id", manageGuard, async (c) => {
 
 manage.post("/delete/:id", manageGuard, (c) => {
   const userId = c.req.param("id");
+  cleanupUserStoredFiles(userId);
   db.run("DELETE FROM users WHERE id = ?", [userId]);
   return c.redirect("/manage");
 });

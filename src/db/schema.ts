@@ -74,5 +74,33 @@ export function initSchema() {
       created_at INTEGER NOT NULL DEFAULT (unixepoch()),
       FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
     );
+
+    CREATE TABLE IF NOT EXISTS stored_data (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      type TEXT NOT NULL CHECK (type IN ('note', 'file')),
+      title TEXT NOT NULL,
+      encrypted_data BLOB,
+      file_path TEXT,
+      file_name TEXT,
+      file_mime TEXT,
+      file_size INTEGER,
+      iv TEXT NOT NULL,
+      auth_tag TEXT NOT NULL,
+      created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+      updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
   `);
+
+  // Migrations for existing databases
+  const migrations = [
+    "ALTER TABLE users ADD COLUMN encrypted_token TEXT",
+    "ALTER TABLE sessions ADD COLUMN encrypted_user_token TEXT",
+  ];
+  for (const sql of migrations) {
+    try { db.exec(sql); } catch (e: any) {
+      if (!e.message?.includes("duplicate column")) throw e;
+    }
+  }
 }

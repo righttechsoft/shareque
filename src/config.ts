@@ -63,4 +63,5 @@ export const config = {
   maxFileSize: parseInt(env("MAX_FILE_SIZE", "100"), 10) * 1024 * 1024,
   dataDir: resolve(import.meta.dir, "../data"),
   uploadsDir: resolve(import.meta.dir, "../data/uploads"),
+  storedDir: resolve(import.meta.dir, "../data/stored"),
 };

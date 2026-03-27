@@ -4,6 +4,7 @@ import { authGuard } from "../middleware/auth-guard";
 import { getUserPreferences, setUserPreferences } from "../auth/session";
 import { createTextShare, createFileShare } from "../services/share";
 import { createUploadRequest } from "../services/upload-request";
+import { listStoredData, type StoredDataListItem } from "../services/stored-data";
 import { Layout } from "../views/layout";
 import { config } from "../config";
 
@@ -56,12 +57,16 @@ dashboard.get("/dashboard", (c) => {
     )
     .all(userId);
 
+  const hasToken = !!c.get("userToken");
+  const storedItems = hasToken ? listStoredData(userId) : [];
+
   return c.html(
     <Layout title="Dashboard">
       <div class="tabs">
         <button class="active" data-tab="text">Share Text</button>
         <button data-tab="file">Share File</button>
         <button data-tab="request">Request Data</button>
+        <button data-tab="stored">Stored Data</button>
       </div>
 
       {/* Text Share Tab */}
@@ -113,7 +118,7 @@ dashboard.get("/dashboard", (c) => {
           <div id="password-field-text" style={prefs.text_use_password ? "" : "display:none"}>
             <label>
               Password
-              <input type="text" name="password" class="input-secret" autocomplete="off" />
+              <input type="text" name="shareque-ps" class="input-secret" autocomplete="off" />
             </label>
           </div>
           <button type="submit" class="mt-1">Share</button>
@@ -169,7 +174,7 @@ dashboard.get("/dashboard", (c) => {
           <div id="password-field-file" style={prefs.file_use_password ? "" : "display:none"}>
             <label>
               Password
-              <input type="text" name="password" class="input-secret" autocomplete="off" />
+              <input type="text" name="shareque-ps" class="input-secret" autocomplete="off" />
             </label>
           </div>
           <button type="submit" class="mt-1">Upload & Share</button>
@@ -223,9 +228,93 @@ dashboard.get("/dashboard", (c) => {
           </div>
         )}
       </div>
+
+      {/* Stored Data Tab */}
+      <div class="tab-content" id="tab-stored">
+        {!hasToken ? (
+          <div class="alert alert-error">
+            Your encryption token is not available. Please log out and log in again.
+          </div>
+        ) : (
+          <>
+            <div class="stored-forms">
+              <details>
+                <summary>Save a Note</summary>
+                <form method="POST" action="/stored/note">
+                  <label>
+                    Title
+                    <input type="text" name="title" required placeholder="Note title" />
+                  </label>
+                  <label>
+                    Content
+                    <textarea name="content" rows={6} required placeholder="Write your note..." />
+                  </label>
+                  <button type="submit">Save Note</button>
+                </form>
+              </details>
+              <details>
+                <summary>Save a File</summary>
+                <form method="POST" action="/stored/file" enctype="multipart/form-data">
+                  <label>
+                    Title
+                    <input type="text" name="title" required placeholder="File title" />
+                  </label>
+                  <label>
+                    File
+                    <input type="file" name="file" required />
+                  </label>
+                  <button type="submit">Save File</button>
+                </form>
+              </details>
+            </div>
+
+            {storedItems.length > 0 ? (
+              <table class="mt-2">
+                <thead>
+                  <tr>
+                    <th>Title</th>
+                    <th>Type</th>
+                    <th>Size</th>
+                    <th>Updated</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {storedItems.map((item: StoredDataListItem) => (
+                    <tr>
+                      <td>{item.title}</td>
+                      <td>{item.type === "note" ? "Note" : item.file_name || "File"}</td>
+                      <td>{item.type === "file" && item.file_size ? formatSize(item.file_size) : "-"}</td>
+                      <td>{new Date(item.updated_at * 1000).toLocaleString()}</td>
+                      <td class="stored-actions">
+                        {item.type === "note" ? (
+                          <a href={`/stored/note/${item.id}`} class="btn-sm">Edit</a>
+                        ) : (
+                          <a href={`/stored/file/${item.id}`} class="btn-sm">Download</a>
+                        )}
+                        <form method="POST" action={`/stored/delete/${item.id}`} style="display:inline" onsubmit="return confirm('Delete this item?')">
+                          <button type="submit" class="btn-sm outline secondary">Delete</button>
+                        </form>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            ) : (
+              <p class="text-muted mt-2">No stored data yet.</p>
+            )}
+          </>
+        )}
+      </div>
     </Layout>
   );
 });
+
+function formatSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
 
 // --- Create Text Share ---
 dashboard.post("/share/text", async (c) => {
@@ -233,7 +322,7 @@ dashboard.post("/share/text", async (c) => {
   const body = await c.req.parseBody();
   const text = body.text as string;
   const usePassword = body.use_password === "1";
-  const password = (body.password as string) || undefined;
+  const password = (body["shareque-ps"] as string) || undefined;
   const oneTime = body.one_time === "1";
   const ttlPreset = (body.ttl_preset as string) || "24h";
   const ttlValue = parseInt(body.ttl_value as string, 10) || 0;
@@ -292,7 +381,7 @@ dashboard.post("/share/file", async (c) => {
   const body = await c.req.parseBody();
   const file = body.file as File;
   const usePassword = body.use_password === "1";
-  const password = (body.password as string) || undefined;
+  const password = (body["shareque-ps"] as string) || undefined;
   const oneTime = body.one_time === "1";
   const ttlPreset = (body.ttl_preset as string) || "24h";
   const ttlValue = parseInt(body.ttl_value as string, 10) || 0;

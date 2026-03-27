@@ -1,4 +1,4 @@
-import { createCipheriv, createDecipheriv, createHmac, createHash, randomBytes, timingSafeEqual } from "node:crypto";
+import { createCipheriv, createDecipheriv, createHmac, createHash, randomBytes, timingSafeEqual, scryptSync } from "node:crypto";
 
 const ALGORITHM = "aes-256-gcm";
 
@@ -119,6 +119,41 @@ export function keyVerificationHash(keyBase64Url: string): string {
   const hash = createHash("sha256").update(keyBase64Url).digest();
   return hash.subarray(0, 16).toString("base64url");
 }
+
+// --- User token encryption (password-based) ---
+
+export function deriveKeyFromPassword(password: string, salt: Buffer): Buffer {
+  return scryptSync(password, salt, 32, { N: 16384, r: 8, p: 1 }) as Buffer;
+}
+
+export function encryptUserToken(token: Buffer, password: string): string {
+  const salt = randomBytes(16);
+  const key = deriveKeyFromPassword(password, salt);
+  const iv = randomBytes(12);
+  const cipher = createCipheriv(ALGORITHM, key, iv);
+  const encrypted = Buffer.concat([cipher.update(token), cipher.final()]);
+  const authTag = cipher.getAuthTag();
+  // Pack: salt(16) + iv(12) + authTag(16) + encrypted(32) = 76 bytes
+  return Buffer.concat([salt, iv, authTag, encrypted]).toString("base64url");
+}
+
+export function decryptUserToken(blob: string, password: string): Buffer | null {
+  try {
+    const raw = Buffer.from(blob, "base64url");
+    const salt = raw.subarray(0, 16);
+    const iv = raw.subarray(16, 28);
+    const authTag = raw.subarray(28, 44);
+    const encrypted = raw.subarray(44);
+    const key = deriveKeyFromPassword(password, salt);
+    const decipher = createDecipheriv(ALGORITHM, key, iv);
+    decipher.setAuthTag(authTag);
+    return Buffer.concat([decipher.update(encrypted), decipher.final()]);
+  } catch {
+    return null;
+  }
+}
+
+// --- Cookie encryption ---
 
 export function encryptCookieValue(data: object, secret: string): string {
   const key = createHash("sha256").update(secret).digest();

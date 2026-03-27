@@ -7,6 +7,16 @@
   text-security: disc;
 }
 
+.stored-actions {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.stored-forms details {
+  margin-bottom: 0.5rem;
+}
+
 .nav-brand {
   text-decoration: none;
   display: flex;

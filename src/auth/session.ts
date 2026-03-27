@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { db } from "../db/connection";
 import { config } from "../config";
-import { encryptCookieValue, decryptCookieValue } from "../crypto/encryption";
+import { encryptCookieValue, decryptCookieValue, keyToBase64Url, keyFromBase64Url } from "../crypto/encryption";
 import type { Context } from "hono";
 import { setCookie, getCookie, deleteCookie } from "hono/cookie";
 
@@ -61,6 +61,7 @@ interface Session {
   user_id: string | null;
   is_admin: number;
   tfa_verified: number;
+  encrypted_user_token: string | null;
   expires_at: number;
 }
 
@@ -90,6 +91,22 @@ export function getSession(sessionId: string): Session | null {
 
 export function markTfaVerified(sessionId: string): void {
   db.run("UPDATE sessions SET tfa_verified = 1 WHERE id = ?", [sessionId]);
+}
+
+export function storeUserTokenInSession(sessionId: string, token: Buffer): void {
+  const encrypted = encryptCookieValue({ t: keyToBase64Url(token) }, config.appSecret);
+  db.run("UPDATE sessions SET encrypted_user_token = ? WHERE id = ?", [encrypted, sessionId]);
+}
+
+export function getUserTokenFromSession(session: Session): Buffer | null {
+  if (!session.encrypted_user_token) return null;
+  try {
+    const data = decryptCookieValue(session.encrypted_user_token, config.appSecret) as { t: string } | null;
+    if (!data?.t) return null;
+    return keyFromBase64Url(data.t);
+  } catch {
+    return null;
+  }
 }
 
 export function deleteSession(sessionId: string): void {

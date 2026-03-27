@@ -1,5 +1,5 @@
 import type { Context, Next } from "hono";
-import { getSessionFromCookie } from "../auth/session";
+import { getSessionFromCookie, getUserTokenFromSession } from "../auth/session";
 
 export async function authGuard(c: Context, next: Next) {
   const session = getSessionFromCookie(c);
@@ -11,6 +11,8 @@ export async function authGuard(c: Context, next: Next) {
   }
   c.set("session", session);
   c.set("userId", session.user_id);
+  const userToken = getUserTokenFromSession(session);
+  if (userToken) c.set("userToken", userToken);
   await next();
 }
 

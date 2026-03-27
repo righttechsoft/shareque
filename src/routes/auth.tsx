@@ -4,10 +4,13 @@ import {
   createSession,
   setSessionCookie,
   getSessionFromCookie,
+  storeUserTokenInSession,
   deleteSession,
   clearSessionCookie,
   markTfaVerified,
 } from "../auth/session";
+import { generateKey, encryptUserToken, decryptUserToken } from "../crypto/encryption";
+import { cleanupUserStoredFiles } from "../services/stored-data";
 import { generateTotpSecret, getTotpUri, generateQrDataUrl, verifyTotp } from "../auth/totp";
 import {
   generateRegOptions,
@@ -42,6 +45,7 @@ interface UserRow {
   password_hash: string | null;
   totp_secret: string | null;
   tfa_method: string | null;
+  encrypted_token: string | null;
   invite_token: string | null;
   invite_expires_at: number | null;
 }
@@ -159,6 +163,17 @@ auth.post("/login", async (c) => {
 
   const sessionId = createSession(user.id, false, rememberMe);
   setSessionCookie(c, sessionId, rememberMe ? 30 * 24 * 60 * 60 : undefined);
+
+  // Handle user encryption token
+  if (user.encrypted_token) {
+    const token = decryptUserToken(user.encrypted_token, password);
+    if (token) storeUserTokenInSession(sessionId, token);
+  } else {
+    const token = generateKey();
+    const blob = encryptUserToken(token, password);
+    db.run("UPDATE users SET encrypted_token = ? WHERE id = ?", [blob, user.id]);
+    storeUserTokenInSession(sessionId, token);
+  }
 
   if (!user.tfa_method) {
     return c.redirect("/setup-2fa");
@@ -293,14 +308,24 @@ auth.post("/set-password/:token", async (c) => {
   }
 
   const hash = await Bun.password.hash(password);
+
+  // Generate new encryption token (old stored data is unrecoverable after password reset)
+  const userToken = generateKey();
+  const tokenBlob = encryptUserToken(userToken, password);
+
+  // Clean up old stored data if any
+  cleanupUserStoredFiles(user.id);
+  db.run("DELETE FROM stored_data WHERE user_id = ?", [user.id]);
+
   db.run(
-    "UPDATE users SET password_hash = ?, invite_token = NULL, invite_expires_at = NULL WHERE id = ?",
-    [hash, user.id]
+    "UPDATE users SET password_hash = ?, encrypted_token = ?, invite_token = NULL, invite_expires_at = NULL WHERE id = ?",
+    [hash, tokenBlob, user.id]
   );
 
   // Create session and redirect to 2FA setup
   const sessionId = createSession(user.id, false);
   setSessionCookie(c, sessionId);
+  storeUserTokenInSession(sessionId, userToken);
 
   return c.redirect("/setup-2fa");
 });

@@ -13,6 +13,7 @@ import authRoutes from "./routes/auth";
 import dashboardRoutes from "./routes/dashboard";
 import viewRoutes from "./routes/view";
 import uploadRoutes from "./routes/upload";
+import storedDataRoutes from "./routes/stored-data";
 import { MinimalLayout } from "./views/layout";
 
 // Initialize database
@@ -34,7 +35,7 @@ const fileLimitMw = bodyLimit({ maxSize: config.maxFileSize + 1024 * 1024 });
 const defaultLimitMw = bodyLimit({ maxSize: 1024 * 1024 });
 app.use("*", (c, next) => {
   const path = c.req.path;
-  if (path === "/share/file" || path.startsWith("/upload/")) {
+  if (path === "/share/file" || path === "/stored/file" || path.startsWith("/upload/")) {
     return fileLimitMw(c, next);
   }
   return defaultLimitMw(c, next);
@@ -67,6 +68,7 @@ app.use("/site.webmanifest", serveStatic({ root: "./public" }));
 app.route("/manage", manageRoutes);
 app.route("/", authRoutes);
 app.route("/", dashboardRoutes);
+app.route("/", storedDataRoutes);
 app.route("/view", viewRoutes);
 app.route("/upload", uploadRoutes);
 
