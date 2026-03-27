@@ -122,32 +122,57 @@ stored.post("/stored/file", async (c) => {
   return c.redirect("/dashboard?tab=stored");
 });
 
-// --- Get content (JSON API for inline viewing) ---
+// --- Get content (HTML fragment for htmx) ---
 stored.get("/stored/content/:id", (c) => {
   const userId = c.get("userId") as string;
   const userToken = requireToken(c);
-  if (!userToken) return c.json({ error: "Token not available" }, 400);
+  if (!userToken) return c.html(<p class="text-muted">Token not available. Please re-login.</p>);
 
   const id = c.req.param("id");
   const note = getNote(id, userId, userToken);
   if (note) {
-    return c.json({ type: "note", id, title: note.title, content: note.content });
+    return c.html(
+      <>
+        <h3 style="margin-top:0">{note.title}</h3>
+        <pre style="white-space:pre-wrap;word-break:break-word">{note.content}</pre>
+        <div class="stored-content-actions">
+          <a href={`/stored/note/${id}`} class="outline btn-sm" role="button">Edit</a>
+          <button type="button" class="outline btn-sm copy-btn" data-copy={note.content}>Copy</button>
+          <form method="POST" action={`/stored/delete/${id}`} style="display:inline" onsubmit="return confirm('Delete this item?')">
+            <button type="submit" class="outline secondary btn-sm">Delete</button>
+          </form>
+        </div>
+      </>
+    );
   }
 
   const file = getStoredFile(id, userId, userToken);
   if (file) {
-    return c.json({
-      type: "file",
-      id,
-      title: file.title,
-      fileName: file.fileName,
-      fileMime: file.fileMime,
-      fileSize: file.fileSize,
-    });
+    return c.html(
+      <>
+        <h3 style="margin-top:0">{file.title}</h3>
+        <div class="stored-file-info">
+          <p><strong>{file.fileName}</strong></p>
+          <p class="file-meta">{file.fileMime} &middot; {formatSize(file.fileSize)}</p>
+        </div>
+        <div class="stored-content-actions">
+          <a href={`/stored/file/${id}`} class="outline btn-sm" role="button">Download</a>
+          <form method="POST" action={`/stored/delete/${id}`} style="display:inline" onsubmit="return confirm('Delete this item?')">
+            <button type="submit" class="outline secondary btn-sm">Delete</button>
+          </form>
+        </div>
+      </>
+    );
   }
 
-  return c.json({ error: "Not found" }, 404);
+  return c.html(<p class="alert alert-error">Item not found.</p>, 404);
 });
+
+function formatSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
 
 // --- Download Stored File ---
 stored.get("/stored/file/:id", (c) => {

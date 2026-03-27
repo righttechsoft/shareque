@@ -22,6 +22,7 @@ export const Layout: FC<LayoutProps> = ({ title, children, hideNav }) => {
         <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
         <link rel="manifest" href="/site.webmanifest" />
         <link rel="stylesheet" href="/style.css" />
+        <script src="https://unpkg.com/htmx.org@2.0.4" crossorigin="anonymous"></script>
       </head>
       <body>
         <main class="container">

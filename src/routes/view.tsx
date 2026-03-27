@@ -78,7 +78,7 @@ view.get("/:id", (c) => {
             <p>This share is password protected.</p>
             <label>
               Password
-              <input type="text" id="share-password" class="input-secret" autocomplete="off" autofocus />
+              <input type="text" id="sq-unlock" class="input-secret" autocomplete="off" autofocus />
             </label>
             <button type="button" id="submit-password">Unlock</button>
             <div id="password-error" class="alert alert-error" style="display:none"></div>
@@ -212,7 +212,7 @@ view.post("/:id/save", async (c) => {
     return c.json({ error: "Invalid request" }, 400);
   }
 
-  const { key, password, passwordToken } = body;
+  const { key, password, passwordToken, title: reqTitle } = body;
   if (!key) return c.json({ error: "Encryption key required" }, 400);
 
   const share = getShareMeta(id);
@@ -240,7 +240,7 @@ view.post("/:id/save", async (c) => {
 
   if (share.type === "text") {
     const content = decryptText(share.encrypted_data as Buffer, shareKey, share.iv, share.auth_tag);
-    const title = `Saved share (${new Date().toLocaleDateString()})`;
+    const title = (reqTitle as string)?.trim() || `Saved share (${new Date().toLocaleDateString()})`;
     createNote({ userId, title, content, userToken });
     return c.json({ saved: true });
   }
@@ -251,7 +251,7 @@ view.post("/:id/save", async (c) => {
   }
   const encryptedFile = readFileSync(share.file_path);
   const fileData = decryptFile(encryptedFile, shareKey, share.iv, share.auth_tag);
-  const title = share.file_name || `Saved file (${new Date().toLocaleDateString()})`;
+  const title = (reqTitle as string)?.trim() || share.file_name || `Saved file (${new Date().toLocaleDateString()})`;
   createStoredFile({
     userId,
     title,

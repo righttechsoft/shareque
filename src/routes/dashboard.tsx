@@ -277,8 +277,9 @@ dashboard.get("/dashboard", (c) => {
                         <button
                           type="button"
                           class="stored-list-item"
-                          data-id={item.id}
-                          data-type={item.type}
+                          hx-get={`/stored/content/${item.id}`}
+                          hx-target="#stored-content"
+                          hx-swap="innerHTML"
                         >
                           <span class="stored-item-icon">{item.type === "note" ? "\u{1F4DD}" : "\u{1F4CE}"}</span>
                           <span class="stored-item-info">
