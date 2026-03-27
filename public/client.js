@@ -137,6 +137,11 @@ document.querySelectorAll('select[name="ttl_preset"]').forEach(sel => {
       // Show delete button (always shown — requires key from URL)
       showDeleteButton(key, password, pwToken);
 
+      // Show save button for logged-in users
+      if (ctx.canSave) {
+        showSaveButton(key, password, pwToken);
+      }
+
       if (ctx.type === 'text') {
         const data = await res.json();
         if (loadingEl) loadingEl.remove();
@@ -211,6 +216,42 @@ document.querySelectorAll('select[name="ttl_preset"]').forEach(sel => {
         }
       } catch {
         alert('Failed to delete share.');
+      }
+    });
+    area.appendChild(btn);
+  }
+
+  function showSaveButton(key, password, pwToken) {
+    const area = document.getElementById('content-actions');
+    if (!area) return;
+    area.style.display = '';
+
+    const btn = document.createElement('button');
+    btn.className = 'outline btn-sm';
+    btn.textContent = 'Save to my data';
+    btn.addEventListener('click', async () => {
+      btn.disabled = true;
+      btn.textContent = 'Saving...';
+      try {
+        const bodyObj = { key };
+        if (password) bodyObj.password = password;
+        if (pwToken) bodyObj.passwordToken = pwToken;
+
+        const res = await fetch(`/view/${ctx.id}/save`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(bodyObj),
+        });
+        const data = await res.json();
+        if (data.saved) {
+          btn.textContent = 'Saved!';
+        } else {
+          btn.textContent = data.error || 'Failed to save';
+          setTimeout(() => { btn.textContent = 'Save to my data'; btn.disabled = false; }, 2000);
+        }
+      } catch {
+        btn.textContent = 'Failed to save';
+        setTimeout(() => { btn.textContent = 'Save to my data'; btn.disabled = false; }, 2000);
       }
     });
     area.appendChild(btn);

@@ -1,6 +1,9 @@
 import { Hono } from "hono";
+import { existsSync, readFileSync } from "node:fs";
 import { getShareMeta, viewShare, deleteShare } from "../services/share";
-import { verifySignedToken } from "../crypto/encryption";
+import { verifySignedToken, keyVerificationHash, keyFromBase64Url, decryptText, decryptFile } from "../crypto/encryption";
+import { getSessionFromCookie, getUserTokenFromSession } from "../auth/session";
+import { createNote, createStoredFile } from "../services/stored-data";
 import { config } from "../config";
 import { MinimalLayout } from "../views/layout";
 
@@ -48,6 +51,14 @@ view.get("/:id", (c) => {
     );
   }
 
+  // Check if viewer is a logged-in user with encryption token
+  let canSave = false;
+  const session = getSessionFromCookie(c);
+  if (session && !session.is_admin && session.tfa_verified && session.user_id) {
+    const userToken = getUserTokenFromSession(session);
+    if (userToken) canSave = true;
+  }
+
   return c.html(
     <MinimalLayout title="View Share">
       <div id="view-container" style="margin-top:2rem">
@@ -91,7 +102,8 @@ view.get("/:id", (c) => {
             type: ${safeJsonEmbed(share.type)},
             hasPassword: ${share.has_password ? "true" : "false"},
             fileName: ${share.file_name ? safeJsonEmbed(share.file_name) : "null"},
-            fileMime: ${share.file_mime ? safeJsonEmbed(share.file_mime) : "null"}
+            fileMime: ${share.file_mime ? safeJsonEmbed(share.file_mime) : "null"},
+            canSave: ${canSave ? "true" : "false"}
           };
         `,
         }}
@@ -177,6 +189,79 @@ view.post("/:id/delete", async (c) => {
   }
 
   return c.json({ deleted: true });
+});
+
+// POST save - decrypt share and save to user's stored data (no view count increment)
+view.post("/:id/save", async (c) => {
+  const id = c.req.param("id");
+
+  // Require authenticated user with encryption token
+  const session = getSessionFromCookie(c);
+  if (!session || session.is_admin || !session.tfa_verified || !session.user_id) {
+    return c.json({ error: "Not authenticated" }, 401);
+  }
+  const userToken = getUserTokenFromSession(session);
+  if (!userToken) {
+    return c.json({ error: "Encryption token not available" }, 400);
+  }
+
+  let body: any;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: "Invalid request" }, 400);
+  }
+
+  const { key, password, passwordToken } = body;
+  if (!key) return c.json({ error: "Encryption key required" }, 400);
+
+  const share = getShareMeta(id);
+  if (!share || share.is_consumed) {
+    return c.json({ error: "Share not found" }, 404);
+  }
+
+  // Verify key
+  const kvHash = keyVerificationHash(key);
+  if (kvHash !== share.key_verification) {
+    return c.json({ error: "Invalid encryption key" }, 400);
+  }
+
+  // Verify password if needed
+  if (share.has_password) {
+    if (!password || !passwordToken) return c.json({ error: "Password required" }, 401);
+    const tokenData = verifySignedToken(passwordToken, config.appSecret) as { h: string } | null;
+    if (!tokenData?.h) return c.json({ error: "Invalid password token" }, 403);
+    const valid = await Bun.password.verify(password, tokenData.h);
+    if (!valid) return c.json({ error: "Invalid password" }, 403);
+  }
+
+  const shareKey = keyFromBase64Url(key);
+  const userId = session.user_id;
+
+  if (share.type === "text") {
+    const content = decryptText(share.encrypted_data as Buffer, shareKey, share.iv, share.auth_tag);
+    const title = `Saved share (${new Date().toLocaleDateString()})`;
+    createNote({ userId, title, content, userToken });
+    return c.json({ saved: true });
+  }
+
+  // File
+  if (!share.file_path || !existsSync(share.file_path)) {
+    return c.json({ error: "File not found" }, 404);
+  }
+  const encryptedFile = readFileSync(share.file_path);
+  const fileData = decryptFile(encryptedFile, shareKey, share.iv, share.auth_tag);
+  const title = share.file_name || `Saved file (${new Date().toLocaleDateString()})`;
+  createStoredFile({
+    userId,
+    title,
+    fileData,
+    fileName: share.file_name || "download",
+    fileMime: share.file_mime || "application/octet-stream",
+    fileSize: share.file_size || fileData.length,
+    userToken,
+  });
+  return c.json({ saved: true });
 });
 
 function formatSize(bytes: number): string {
