@@ -7,6 +7,10 @@
   text-security: disc;
 }
 
+.stored-forms {
+  margin-top: 1rem;
+}
+
 .stored-forms details {
   margin-bottom: 0.5rem;
 }
@@ -79,6 +83,7 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  color: var(--pico-color);
 }
 
 .stored-item-info small {
@@ -105,6 +110,17 @@
   margin-top: 1rem;
   padding-top: 0.75rem;
   border-top: 1px solid var(--pico-muted-border-color);
+}
+
+.stored-content-actions a,
+.stored-content-actions button {
+  padding: 0.4rem 1rem;
+  font-size: 0.8rem;
+  line-height: 1.2;
+  min-width: 5rem;
+  text-align: center;
+  box-sizing: border-box;
+  margin: 0;
 }
 
 .stored-file-info {

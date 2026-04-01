@@ -237,37 +237,6 @@ dashboard.get("/dashboard", (c) => {
           </div>
         ) : (
           <>
-            <div class="stored-forms">
-              <details>
-                <summary>Save a Note</summary>
-                <form method="POST" action="/stored/note">
-                  <label>
-                    Title
-                    <input type="text" name="title" required placeholder="Note title" />
-                  </label>
-                  <label>
-                    Content
-                    <textarea name="content" rows={6} required placeholder="Write your note..." />
-                  </label>
-                  <button type="submit">Save Note</button>
-                </form>
-              </details>
-              <details>
-                <summary>Save a File</summary>
-                <form method="POST" action="/stored/file" enctype="multipart/form-data">
-                  <label>
-                    Title
-                    <input type="text" name="title" required placeholder="File title" />
-                  </label>
-                  <label>
-                    File
-                    <input type="file" name="file" required />
-                  </label>
-                  <button type="submit">Save File</button>
-                </form>
-              </details>
-            </div>
-
             <div class="stored-panel">
               <div class="stored-list">
                 {storedItems.length > 0 ? (
@@ -301,6 +270,37 @@ dashboard.get("/dashboard", (c) => {
               <div class="stored-content" id="stored-content">
                 <p class="text-muted">Select an item to view its content.</p>
               </div>
+            </div>
+
+            <div class="stored-forms">
+              <details>
+                <summary>Save a Note</summary>
+                <form method="POST" action="/stored/note">
+                  <label>
+                    Title
+                    <input type="text" name="title" required placeholder="Note title" />
+                  </label>
+                  <label>
+                    Content
+                    <textarea name="content" rows={6} required placeholder="Write your note..." />
+                  </label>
+                  <button type="submit">Save Note</button>
+                </form>
+              </details>
+              <details>
+                <summary>Save a File</summary>
+                <form method="POST" action="/stored/file" enctype="multipart/form-data">
+                  <label>
+                    Title
+                    <input type="text" name="title" required placeholder="File title" />
+                  </label>
+                  <label>
+                    File
+                    <input type="file" name="file" required />
+                  </label>
+                  <button type="submit">Save File</button>
+                </form>
+              </details>
             </div>
           </>
         )}
