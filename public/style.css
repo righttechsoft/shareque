@@ -79,11 +79,11 @@
   min-width: 0;
 }
 
-.stored-item-info strong {
+button.stored-list-item .stored-item-info strong {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  color: var(--pico-color);
+  color: var(--pico-color) !important;
 }
 
 .stored-item-info small {
@@ -112,6 +112,11 @@
   border-top: 1px solid var(--pico-muted-border-color);
 }
 
+.stored-content-actions form {
+  margin: 0;
+  padding: 0;
+}
+
 .stored-content-actions a,
 .stored-content-actions button {
   padding: 0.4rem 1rem;
@@ -121,6 +126,7 @@
   text-align: center;
   box-sizing: border-box;
   margin: 0;
+  height: 2rem;
 }
 
 .stored-file-info {
@@ -211,6 +217,12 @@
   border-bottom: 2px solid transparent;
   margin-bottom: -2px;
   font-size: 1rem;
+}
+
+.tabs a:focus,
+.tabs button:focus {
+  box-shadow: none;
+  outline: none;
 }
 
 .tabs a.active,

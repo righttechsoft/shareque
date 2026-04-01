@@ -13,13 +13,16 @@ function activateTab(tabId) {
 }
 
 document.querySelectorAll('.tabs button[data-tab]').forEach(btn => {
-  btn.addEventListener('click', () => activateTab(btn.dataset.tab));
+  btn.addEventListener('click', () => {
+    activateTab(btn.dataset.tab);
+    localStorage.setItem('activeTab', btn.dataset.tab);
+  });
 });
 
-// Activate tab from ?tab= query param
+// Activate tab from ?tab= query param or localStorage
 (function() {
   const params = new URLSearchParams(location.search);
-  const tab = params.get('tab');
+  const tab = params.get('tab') || localStorage.getItem('activeTab');
   if (tab) activateTab(tab);
 })();
 
