@@ -21,7 +21,7 @@ export const Layout: FC<LayoutProps> = ({ title, children, hideNav }) => {
         <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
         <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
         <link rel="manifest" href="/site.webmanifest" />
-        <link rel="stylesheet" href="/style.css" />
+        <link rel="stylesheet" href={`/style.css?v=${Date.now()}`} />
         <script src="https://unpkg.com/htmx.org@2.0.4" crossorigin="anonymous"></script>
       </head>
       <body>
@@ -73,7 +73,7 @@ export const MinimalLayout: FC<{ title?: string; children: any }> = ({
         <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
         <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
         <link rel="manifest" href="/site.webmanifest" />
-        <link rel="stylesheet" href="/style.css" />
+        <link rel="stylesheet" href={`/style.css?v=${Date.now()}`} />
       </head>
       <body>
         <main class="container">{children}</main>
