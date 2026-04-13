@@ -286,6 +286,46 @@
   border-radius: var(--pico-border-radius);
 }
 
+/* Line-by-line copy */
+.line-copy-row {
+  display: flex;
+  align-items: flex-start;
+  min-height: 1.4em;
+}
+
+.line-copy-row:hover .line-copy-btn {
+  opacity: 1;
+}
+
+.line-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.line-copy-btn {
+  flex-shrink: 0;
+  opacity: 0;
+  cursor: pointer;
+  padding: 0 0.3rem;
+  margin: 0;
+  border: none;
+  background: none;
+  color: var(--pico-muted-color);
+  transition: opacity 0.15s;
+  display: inline-flex;
+  align-items: center;
+  line-height: inherit;
+  height: auto;
+  width: auto;
+  min-width: auto;
+  --pico-background-color: transparent;
+  --pico-border-color: transparent;
+}
+
+.line-copy-btn:hover {
+  color: var(--pico-primary);
+}
+
 .password-prompt {
   max-width: 400px;
   margin: 2rem auto;

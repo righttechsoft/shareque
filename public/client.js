@@ -40,6 +40,58 @@ document.addEventListener('click', function(e) {
   }
 });
 
+// === Line-by-line copy ===
+var LINE_COPY_SVG = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
+var LINE_CHECK_SVG = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>';
+
+function wrapLinesForCopy(pre) {
+  var text = pre.textContent || '';
+  var lines = text.split('\n');
+  if (lines.length > 1 && lines[lines.length - 1] === '') lines.pop();
+
+  var wrap = document.createElement('div');
+  wrap.className = 'line-copy-wrap';
+
+  lines.forEach(function(line) {
+    var row = document.createElement('div');
+    row.className = 'line-copy-row';
+
+    var span = document.createElement('span');
+    span.className = 'line-text';
+    span.textContent = line;
+    row.appendChild(span);
+
+    if (line.trim()) {
+      var btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'line-copy-btn';
+      btn.title = 'Copy line';
+      btn.innerHTML = LINE_COPY_SVG;
+      row.appendChild(btn);
+    }
+
+    wrap.appendChild(row);
+  });
+
+  pre.textContent = '';
+  pre.appendChild(wrap);
+}
+
+document.addEventListener('click', function(e) {
+  var btn = e.target.closest('.line-copy-btn');
+  if (!btn) return;
+  var row = btn.closest('.line-copy-row');
+  if (!row) return;
+  var span = row.querySelector('.line-text');
+  if (!span) return;
+  var text = span.textContent.trim();
+  if (!text) return;
+  navigator.clipboard.writeText(text).then(function() {
+    btn.innerHTML = LINE_CHECK_SVG;
+    setTimeout(function() { btn.innerHTML = LINE_COPY_SVG; }, 1500);
+  });
+});
+
 // === Password field toggle ===
 document.querySelectorAll('input[name="use_password"]').forEach(cb => {
   cb.addEventListener('change', () => {
@@ -67,6 +119,15 @@ document.addEventListener('htmx:beforeRequest', function(e) {
   if (btn.classList.contains('stored-list-item')) {
     document.querySelectorAll('.stored-list-item').forEach(b => b.classList.remove('active'));
     btn.classList.add('active');
+  }
+});
+
+document.addEventListener('htmx:afterSettle', function(e) {
+  var target = e.detail.target;
+  if (!target || !target.closest) return;
+  if (target.closest('.stored-content')) {
+    var pre = target.querySelector('pre');
+    if (pre) wrapLinesForCopy(pre);
   }
 });
 
@@ -183,6 +244,7 @@ document.addEventListener('htmx:beforeRequest', function(e) {
   function renderTextContent(text, container, actions) {
     const pre = document.createElement('pre');
     pre.textContent = text;
+    wrapLinesForCopy(pre);
 
     const wrapper = document.createElement('div');
     wrapper.className = 'content-preview';
@@ -307,6 +369,7 @@ document.addEventListener('htmx:beforeRequest', function(e) {
       blob.text().then(text => {
         const pre = document.createElement('pre');
         pre.textContent = text;
+        wrapLinesForCopy(pre);
         wrapper.appendChild(pre);
       });
     } else {
