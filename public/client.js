@@ -56,11 +56,6 @@ function wrapLinesForCopy(pre) {
     var row = document.createElement('div');
     row.className = 'line-copy-row';
 
-    var span = document.createElement('span');
-    span.className = 'line-text';
-    span.textContent = line;
-    row.appendChild(span);
-
     if (line.trim()) {
       var btn = document.createElement('button');
       btn.type = 'button';
@@ -69,6 +64,11 @@ function wrapLinesForCopy(pre) {
       btn.innerHTML = LINE_COPY_SVG;
       row.appendChild(btn);
     }
+
+    var span = document.createElement('span');
+    span.className = 'line-text';
+    span.textContent = line;
+    row.appendChild(span);
 
     wrap.appendChild(row);
   });

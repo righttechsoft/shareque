@@ -290,7 +290,13 @@
 .line-copy-row {
   display: flex;
   align-items: flex-start;
+  gap: 0.2rem;
   min-height: 1.4em;
+  padding-left: 1.4rem;
+}
+
+.line-copy-row:has(.line-copy-btn) {
+  padding-left: 0;
 }
 
 .line-copy-row:hover .line-copy-btn {
@@ -304,9 +310,10 @@
 
 .line-copy-btn {
   flex-shrink: 0;
+  width: 1.2rem;
   opacity: 0;
   cursor: pointer;
-  padding: 0 0.3rem;
+  padding: 0 0.1rem;
   margin: 0;
   border: none;
   background: none;
@@ -314,9 +321,9 @@
   transition: opacity 0.15s;
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   line-height: inherit;
   height: auto;
-  width: auto;
   min-width: auto;
   --pico-background-color: transparent;
   --pico-border-color: transparent;
