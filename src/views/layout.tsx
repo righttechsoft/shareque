@@ -49,7 +49,7 @@ export const Layout: FC<LayoutProps> = ({ title, children, hideNav }) => {
           )}
           {children}
         </main>
-        <script src="/client.js"></script>
+        <script src={`/client.js?v=${Date.now()}`}></script>
       </body>
     </html>
   );
@@ -77,7 +77,7 @@ export const MinimalLayout: FC<{ title?: string; children: any }> = ({
       </head>
       <body>
         <main class="container">{children}</main>
-        <script src="/client.js"></script>
+        <script src={`/client.js?v=${Date.now()}`}></script>
       </body>
     </html>
   );
