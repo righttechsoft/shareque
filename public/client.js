@@ -113,6 +113,14 @@ document.querySelectorAll('select[name="ttl_preset"]').forEach(sel => {
   });
 });
 
+// === Move-to-group dropdown auto-submit ===
+document.addEventListener('change', function(e) {
+  var sel = e.target.closest('.move-to-group');
+  if (!sel) return;
+  var form = sel.closest('form');
+  if (form) form.submit();
+});
+
 // === Stored Data Panel (active state via htmx events) ===
 document.addEventListener('htmx:beforeRequest', function(e) {
   const btn = e.detail.elt;

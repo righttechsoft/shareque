@@ -41,6 +41,122 @@
 
 .stored-list li {
   border-bottom: 1px solid var(--pico-muted-border-color);
+  display: flex;
+  flex-direction: column;
+}
+
+.group-section {
+  border-bottom: 1px solid var(--pico-muted-border-color);
+}
+
+.group-section > summary {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.5rem 0.8rem;
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-weight: 600;
+  background: var(--pico-card-background-color);
+  list-style: none;
+  user-select: none;
+}
+
+.group-section > summary::-webkit-details-marker {
+  display: none;
+}
+
+.group-section > summary::before {
+  content: "▸";
+  font-size: 0.7rem;
+  color: var(--pico-muted-color);
+  transition: transform 0.15s;
+  flex-shrink: 0;
+}
+
+.group-section[open] > summary::before {
+  transform: rotate(90deg);
+}
+
+.group-section > summary:hover {
+  background: var(--pico-muted-border-color);
+}
+
+.group-name {
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.group-count {
+  color: var(--pico-muted-color);
+  font-weight: normal;
+  font-size: 0.75rem;
+  flex-shrink: 0;
+}
+
+.group-actions {
+  display: none;
+  align-items: center;
+  gap: 0.3rem;
+  flex-shrink: 0;
+}
+
+.group-section > summary:hover .group-actions,
+.group-section[open] > summary .group-actions {
+  display: inline-flex;
+}
+
+.group-rename-form {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  margin: 0;
+}
+
+.group-rename-form input[type="text"] {
+  width: 7rem;
+  padding: 0.2rem 0.4rem !important;
+  font-size: 0.75rem !important;
+  height: 1.7rem !important;
+  margin: 0 !important;
+}
+
+.group-actions button {
+  padding: 0.2rem 0.5rem !important;
+  font-size: 0.7rem !important;
+  height: 1.7rem !important;
+  min-width: 0 !important;
+  margin: 0 !important;
+}
+
+.group-empty {
+  padding: 0.6rem 0.8rem;
+  font-size: 0.8rem;
+  margin: 0;
+}
+
+.move-form {
+  margin: 0 0 0.4rem 2.2rem;
+  padding: 0;
+}
+
+.move-to-group {
+  width: calc(100% - 0.6rem);
+  padding: 0.2rem 0.4rem !important;
+  font-size: 0.72rem !important;
+  height: 1.7rem !important;
+  margin: 0 !important;
+  color: var(--pico-muted-color);
+  background-color: transparent !important;
+  border: 1px dashed var(--pico-muted-border-color) !important;
+}
+
+.move-to-group:hover,
+.move-to-group:focus {
+  color: var(--pico-color);
+  border-style: solid !important;
 }
 
 .stored-list-item {

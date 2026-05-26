@@ -91,12 +91,25 @@ export function initSchema() {
       updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
       FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
     );
+
+    CREATE TABLE IF NOT EXISTS groups (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      encrypted_name BLOB NOT NULL,
+      iv TEXT NOT NULL,
+      auth_tag TEXT NOT NULL,
+      created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_groups_user ON groups(user_id);
   `);
 
   // Migrations for existing databases
   const migrations = [
     "ALTER TABLE users ADD COLUMN encrypted_token TEXT",
     "ALTER TABLE sessions ADD COLUMN encrypted_user_token TEXT",
+    "ALTER TABLE stored_data ADD COLUMN group_id TEXT",
   ];
   for (const sql of migrations) {
     try { db.exec(sql); } catch (e: any) {

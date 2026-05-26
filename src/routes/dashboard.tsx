@@ -4,7 +4,12 @@ import { authGuard } from "../middleware/auth-guard";
 import { getUserPreferences, setUserPreferences } from "../auth/session";
 import { createTextShare, createFileShare } from "../services/share";
 import { createUploadRequest } from "../services/upload-request";
-import { listStoredData, type StoredDataListItem } from "../services/stored-data";
+import {
+  listStoredData,
+  listGroups,
+  type StoredDataListItem,
+  type GroupListItem,
+} from "../services/stored-data";
 import { Layout } from "../views/layout";
 import { config } from "../config";
 
@@ -57,8 +62,24 @@ dashboard.get("/dashboard", (c) => {
     )
     .all(userId);
 
-  const hasToken = !!c.get("userToken");
+  const userToken = c.get("userToken") as Buffer | undefined;
+  const hasToken = !!userToken;
   const storedItems = hasToken ? listStoredData(userId) : [];
+  const groups: GroupListItem[] = hasToken && userToken ? listGroups(userId, userToken) : [];
+
+  // Build group -> items map (null key = Ungrouped)
+  const itemsByGroup = new Map<string | null, StoredDataListItem[]>();
+  itemsByGroup.set(null, []);
+  for (const g of groups) itemsByGroup.set(g.id, []);
+  for (const item of storedItems) {
+    const key = item.group_id && itemsByGroup.has(item.group_id) ? item.group_id : null;
+    itemsByGroup.get(key)!.push(item);
+  }
+
+  const renderSections: { id: string | null; name: string; items: StoredDataListItem[] }[] = [
+    { id: null, name: "Ungrouped", items: itemsByGroup.get(null) || [] },
+    ...groups.map((g) => ({ id: g.id, name: g.name, items: itemsByGroup.get(g.id) || [] })),
+  ];
 
   return c.html(
     <Layout title="Dashboard">
@@ -239,32 +260,98 @@ dashboard.get("/dashboard", (c) => {
           <>
             <div class="stored-panel">
               <div class="stored-list">
-                {storedItems.length > 0 ? (
-                  <ul>
-                    {storedItems.map((item: StoredDataListItem) => (
-                      <li>
-                        <button
-                          type="button"
-                          class="stored-list-item"
-                          hx-get={`/stored/content/${item.id}`}
-                          hx-target="#stored-content"
-                          hx-swap="innerHTML"
-                        >
-                          <span class="stored-item-icon">{item.type === "note" ? "\u{1F4DD}" : "\u{1F4CE}"}</span>
-                          <span class="stored-item-info">
-                            <strong>{item.title}</strong>
-                            <small>
-                              {item.type === "file" && item.file_size ? formatSize(item.file_size) : "Note"}
-                              {" \u00B7 "}
-                              {new Date(item.updated_at * 1000).toLocaleDateString()}
-                            </small>
-                          </span>
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                ) : (
+                {storedItems.length === 0 && groups.length === 0 ? (
                   <p class="text-muted" style="padding:1rem">No stored data yet.</p>
+                ) : (
+                  renderSections.map((section) => (
+                    <details class="group-section" open={section.id === null}>
+                      <summary class="group-summary">
+                        <span class="group-name">{section.name}</span>
+                        <span class="group-count">({section.items.length})</span>
+                        {section.id !== null && (
+                          <span class="group-actions">
+                            <form
+                              method="POST"
+                              action={`/stored/group/${section.id}/rename`}
+                              class="group-rename-form"
+                              onsubmit="event.stopPropagation()"
+                            >
+                              <input
+                                type="text"
+                                name="name"
+                                value={section.name}
+                                required
+                                title="Rename group"
+                                onclick="event.stopPropagation()"
+                              />
+                              <button type="submit" class="outline btn-sm" title="Save name">Save</button>
+                            </form>
+                            <form
+                              method="POST"
+                              action={`/stored/group/${section.id}/delete`}
+                              style="display:inline"
+                              onsubmit="event.stopPropagation();return confirm('Delete this group? Its items will move to Ungrouped.')"
+                            >
+                              <button
+                                type="submit"
+                                class="outline secondary btn-sm"
+                                title="Delete group"
+                                onclick="event.stopPropagation()"
+                              >
+                                Delete
+                              </button>
+                            </form>
+                          </span>
+                        )}
+                      </summary>
+                      {section.items.length > 0 ? (
+                        <ul>
+                          {section.items.map((item: StoredDataListItem) => (
+                            <li>
+                              <button
+                                type="button"
+                                class="stored-list-item"
+                                hx-get={`/stored/content/${item.id}`}
+                                hx-target="#stored-content"
+                                hx-swap="innerHTML"
+                              >
+                                <span class="stored-item-icon">{item.type === "note" ? "\u{1F4DD}" : "\u{1F4CE}"}</span>
+                                <span class="stored-item-info">
+                                  <strong>{item.title}</strong>
+                                  <small>
+                                    {item.type === "file" && item.file_size ? formatSize(item.file_size) : "Note"}
+                                    {" \u00B7 "}
+                                    {new Date(item.updated_at * 1000).toLocaleDateString()}
+                                  </small>
+                                </span>
+                              </button>
+                              <form
+                                method="POST"
+                                action={`/stored/item/${item.id}/move`}
+                                class="move-form"
+                              >
+                                <select name="group_id" class="move-to-group" title="Move to group">
+                                  <option value="" selected={item.group_id === null || !itemsByGroup.has(item.group_id || "")}>
+                                    Ungrouped
+                                  </option>
+                                  {groups.map((g) => (
+                                    <option value={g.id} selected={item.group_id === g.id}>
+                                      {g.name}
+                                    </option>
+                                  ))}
+                                </select>
+                                <noscript>
+                                  <button type="submit" class="outline btn-sm">Move</button>
+                                </noscript>
+                              </form>
+                            </li>
+                          ))}
+                        </ul>
+                      ) : (
+                        <p class="text-muted group-empty">Empty</p>
+                      )}
+                    </details>
+                  ))
                 )}
               </div>
               <div class="stored-content" id="stored-content">
@@ -273,6 +360,16 @@ dashboard.get("/dashboard", (c) => {
             </div>
 
             <div class="stored-forms">
+              <details>
+                <summary>Create Group</summary>
+                <form method="POST" action="/stored/group">
+                  <label>
+                    Group Name
+                    <input type="text" name="name" required placeholder="e.g. Work, Personal..." />
+                  </label>
+                  <button type="submit">Create Group</button>
+                </form>
+              </details>
               <details>
                 <summary>Save a Note</summary>
                 <form method="POST" action="/stored/note">

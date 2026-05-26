@@ -28,8 +28,24 @@ export interface StoredDataListItem {
   file_name: string | null;
   file_mime: string | null;
   file_size: number | null;
+  group_id: string | null;
   created_at: number;
   updated_at: number;
+}
+
+export interface GroupListItem {
+  id: string;
+  name: string;
+  created_at: number;
+}
+
+interface GroupRow {
+  id: string;
+  user_id: string;
+  encrypted_name: Buffer;
+  iv: string;
+  auth_tag: string;
+  created_at: number;
 }
 
 function userStoredDir(userId: string): string {
@@ -80,10 +96,102 @@ export function createStoredFile(opts: {
 export function listStoredData(userId: string): StoredDataListItem[] {
   return db
     .query<StoredDataListItem, [string]>(
-      `SELECT id, type, title, file_name, file_mime, file_size, created_at, updated_at
+      `SELECT id, type, title, file_name, file_mime, file_size, group_id, created_at, updated_at
        FROM stored_data WHERE user_id = ? ORDER BY updated_at DESC`
     )
     .all(userId);
+}
+
+export function listGroups(userId: string, userToken: Buffer): GroupListItem[] {
+  const rows = db
+    .query<GroupRow, [string]>(
+      "SELECT * FROM groups WHERE user_id = ? ORDER BY created_at ASC"
+    )
+    .all(userId);
+  const out: GroupListItem[] = [];
+  for (const row of rows) {
+    try {
+      const name = decryptText(row.encrypted_name, userToken, row.iv, row.auth_tag);
+      out.push({ id: row.id, name, created_at: row.created_at });
+    } catch {
+      // skip rows that fail to decrypt (e.g. token mismatch)
+    }
+  }
+  return out;
+}
+
+export function createGroup(userId: string, name: string, userToken: Buffer): string {
+  const id = nanoid(12);
+  const { encrypted, iv, authTag } = encryptText(name, userToken);
+  db.run(
+    `INSERT INTO groups (id, user_id, encrypted_name, iv, auth_tag) VALUES (?, ?, ?, ?, ?)`,
+    [id, userId, encrypted, iv, authTag]
+  );
+  return id;
+}
+
+export function renameGroup(
+  id: string,
+  userId: string,
+  name: string,
+  userToken: Buffer
+): boolean {
+  const row = db
+    .query<{ id: string }, [string, string]>(
+      "SELECT id FROM groups WHERE id = ? AND user_id = ?"
+    )
+    .get(id, userId);
+  if (!row) return false;
+  const { encrypted, iv, authTag } = encryptText(name, userToken);
+  db.run(
+    `UPDATE groups SET encrypted_name = ?, iv = ?, auth_tag = ? WHERE id = ? AND user_id = ?`,
+    [encrypted, iv, authTag, id, userId]
+  );
+  return true;
+}
+
+export function deleteGroup(id: string, userId: string): boolean {
+  const row = db
+    .query<{ id: string }, [string, string]>(
+      "SELECT id FROM groups WHERE id = ? AND user_id = ?"
+    )
+    .get(id, userId);
+  if (!row) return false;
+  const tx = db.transaction(() => {
+    db.run(
+      "UPDATE stored_data SET group_id = NULL WHERE group_id = ? AND user_id = ?",
+      [id, userId]
+    );
+    db.run("DELETE FROM groups WHERE id = ? AND user_id = ?", [id, userId]);
+  });
+  tx();
+  return true;
+}
+
+export function moveStoredItem(
+  itemId: string,
+  userId: string,
+  groupId: string | null
+): boolean {
+  const item = db
+    .query<{ id: string }, [string, string]>(
+      "SELECT id FROM stored_data WHERE id = ? AND user_id = ?"
+    )
+    .get(itemId, userId);
+  if (!item) return false;
+  if (groupId) {
+    const grp = db
+      .query<{ id: string }, [string, string]>(
+        "SELECT id FROM groups WHERE id = ? AND user_id = ?"
+      )
+      .get(groupId, userId);
+    if (!grp) return false;
+  }
+  db.run(
+    "UPDATE stored_data SET group_id = ?, updated_at = unixepoch() WHERE id = ? AND user_id = ?",
+    [groupId, itemId, userId]
+  );
+  return true;
 }
 
 export function getNote(

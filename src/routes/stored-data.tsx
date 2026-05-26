@@ -1,6 +1,17 @@
 import { Hono } from "hono";
 import { authGuard } from "../middleware/auth-guard";
-import { createNote, createStoredFile, getNote, getStoredFile, updateNote, deleteStoredItem } from "../services/stored-data";
+import {
+  createNote,
+  createStoredFile,
+  getNote,
+  getStoredFile,
+  updateNote,
+  deleteStoredItem,
+  createGroup,
+  renameGroup,
+  deleteGroup,
+  moveStoredItem,
+} from "../services/stored-data";
 import { Layout } from "../views/layout";
 import { config } from "../config";
 
@@ -206,6 +217,54 @@ stored.post("/stored/delete/:id", (c) => {
   const userId = c.get("userId") as string;
   const id = c.req.param("id");
   deleteStoredItem(id, userId);
+  return c.redirect("/dashboard?tab=stored");
+});
+
+// --- Create Group ---
+stored.post("/stored/group", async (c) => {
+  const userId = c.get("userId") as string;
+  const userToken = requireToken(c);
+  if (!userToken) return c.redirect("/dashboard?tab=stored");
+
+  const body = await c.req.parseBody();
+  const name = (body.name as string)?.trim();
+  if (!name) return c.redirect("/dashboard?tab=stored");
+
+  createGroup(userId, name, userToken);
+  return c.redirect("/dashboard?tab=stored");
+});
+
+// --- Rename Group ---
+stored.post("/stored/group/:id/rename", async (c) => {
+  const userId = c.get("userId") as string;
+  const userToken = requireToken(c);
+  if (!userToken) return c.redirect("/dashboard?tab=stored");
+
+  const id = c.req.param("id");
+  const body = await c.req.parseBody();
+  const name = (body.name as string)?.trim();
+  if (!name) return c.redirect("/dashboard?tab=stored");
+
+  renameGroup(id, userId, name, userToken);
+  return c.redirect("/dashboard?tab=stored");
+});
+
+// --- Delete Group (items reassigned to Ungrouped) ---
+stored.post("/stored/group/:id/delete", (c) => {
+  const userId = c.get("userId") as string;
+  const id = c.req.param("id");
+  deleteGroup(id, userId);
+  return c.redirect("/dashboard?tab=stored");
+});
+
+// --- Move Stored Item to Group ---
+stored.post("/stored/item/:id/move", async (c) => {
+  const userId = c.get("userId") as string;
+  const id = c.req.param("id");
+  const body = await c.req.parseBody();
+  const raw = (body.group_id as string) || "";
+  const groupId = raw.trim() === "" ? null : raw.trim();
+  moveStoredItem(id, userId, groupId);
   return c.redirect("/dashboard?tab=stored");
 });
 
