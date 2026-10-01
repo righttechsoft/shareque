@@ -298,6 +298,80 @@ document.addEventListener('submit', function(e) {
     contentArea.appendChild(dl);
   }
 
+  // Video/audio of unlimited-view shares: the server hands out a ticket cookie, the browser then plays
+  // /view/{id}/stream with Range requests (works for any file size)
+  async function startStreamPlayback(key, password, pwToken) {
+    const loadingEl = document.getElementById('loading-indicator');
+    const contentArea = document.getElementById('content-area');
+    const passwordPrompt = document.getElementById('password-prompt');
+    const pwError = document.getElementById('password-error');
+    try {
+      const bodyObj = { key, ticket: true };
+      if (password) bodyObj.password = password;
+      if (pwToken) bodyObj.passwordToken = pwToken;
+      const res = await fetch(`/view/${ctx.id}/content`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(bodyObj),
+      });
+      if (res.status === 401) {
+        if (pwError) {
+          pwError.textContent = 'Password required.';
+          pwError.style.display = '';
+        }
+        return;
+      }
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: 'Request failed' }));
+        if (err.error === 'Invalid password' && pwError) {
+          pwError.textContent = 'Invalid password.';
+          pwError.style.display = '';
+          return;
+        }
+        throw new Error(err.error || 'Failed to load content');
+      }
+
+      if (passwordPrompt) passwordPrompt.style.display = 'none';
+      if (loadingEl) loadingEl.remove();
+      const copyBtn = document.getElementById('copy-content-btn');
+      if (copyBtn) copyBtn.style.display = 'none';
+      contentArea.style.display = '';
+
+      const isVideo = (ctx.fileMime || '').startsWith('video/');
+      const media = document.createElement(isVideo ? 'video' : 'audio');
+      media.src = `/view/${ctx.id}/stream`;
+      media.controls = true;
+      if (isVideo) media.style.maxWidth = '100%';
+      const wrapper = document.createElement('div');
+      wrapper.className = 'content-preview';
+      wrapper.appendChild(media);
+      contentArea.appendChild(wrapper);
+
+      const actions = document.getElementById('content-actions');
+      if (actions) {
+        actions.style.display = '';
+        const dlBtn = document.createElement('button');
+        dlBtn.type = 'button';
+        dlBtn.className = 'outline';
+        dlBtn.textContent = 'Download';
+        dlBtn.addEventListener('click', () => startStreamDownload(key, password, pwToken));
+        actions.appendChild(dlBtn);
+      }
+
+      if (!streamStarted) {
+        streamStarted = true;
+        showDeleteButton(key, password, pwToken);
+        if (ctx.canSave) showSaveButton(key, password, pwToken);
+      }
+    } catch (err) {
+      if (loadingEl) loadingEl.remove();
+      if (contentArea) {
+        contentArea.innerHTML = `<div class="alert alert-error">${escapeHtml(err.message)}</div>`;
+        contentArea.style.display = '';
+      }
+    }
+  }
+
   if (ctx.hasPassword) {
     // Wait for password submission
     const submitBtn = document.getElementById('submit-password');
@@ -305,6 +379,10 @@ document.addEventListener('submit', function(e) {
 
     if (submitBtn) {
       const doSubmit = () => {
+        if (ctx.canStream) {
+          startStreamPlayback(encryptionKey, pwInput?.value, passwordToken);
+          return;
+        }
         if (isLargeFile) {
           showLargeDownload(encryptionKey, pwInput?.value, passwordToken);
           startStreamDownload(encryptionKey, pwInput?.value, passwordToken);
@@ -321,6 +399,8 @@ document.addEventListener('submit', function(e) {
         }
       });
     }
+  } else if (ctx.canStream) {
+    startStreamPlayback(encryptionKey, undefined, passwordToken);
   } else if (isLargeFile) {
     showLargeDownload(encryptionKey, undefined, passwordToken);
   } else {

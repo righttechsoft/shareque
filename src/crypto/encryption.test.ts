@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Readable } from "node:stream";
 import { randomBytes } from "node:crypto";
-import { generateKey, encryptStreamToFile, decryptFileStream, FileTooLargeError } from "./encryption";
+import { generateKey, encryptStreamToFile, decryptFileStream, decryptFileRange, FileTooLargeError } from "./encryption";
 
 const dir = mkdtempSync(join(tmpdir(), "shareque-enc-"));
 
@@ -39,6 +39,17 @@ test("tampered ciphertext errors the decrypt stream", async () => {
   buf[100] ^= 1;
   writeFileSync(dest, buf);
   await expect(readAll(decryptFileStream(dest, key, iv, authTag))).rejects.toThrow();
+});
+
+test("range decrypt equals plaintext slice", async () => {
+  const key = generateKey();
+  const data = randomBytes(300_000);
+  const dest = join(dir, "d.enc");
+  const { iv } = await encryptStreamToFile(Readable.from([data]), key, dest, 1_000_000);
+  const last = data.length - 1;
+  for (const [s, e] of [[0, 0], [1, 17], [15, 16], [16, 31], [4097, 70001], [last, last], [last - 40, last]]) {
+    expect(decryptFileRange(dest, key, iv, s, e).equals(data.subarray(s, e + 1))).toBe(true);
+  }
 });
 
 test("cleanup", () => rmSync(dir, { recursive: true, force: true }));

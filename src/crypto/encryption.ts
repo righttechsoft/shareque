@@ -1,4 +1,4 @@
-import { createReadStream, createWriteStream, unlinkSync } from "node:fs";
+import { closeSync, createReadStream, createWriteStream, openSync, readSync, unlinkSync } from "node:fs";
 import { Readable, Transform, pipeline as pipelineCb } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { createCipheriv, createDecipheriv, createHmac, createHash, randomBytes, timingSafeEqual, scryptSync } from "node:crypto";
@@ -93,6 +93,25 @@ export function decryptFileStream(
   // pipeline destroys the decipher (the returned stream) with the error if the read stream fails
   pipelineCb(createReadStream(path), decipher, () => {});
   return decipher;
+}
+
+// ponytail: range reads use the CTR keystream only and skip GCM tag verification; the full download still verifies. Sync read, fine for the 4 MB slices used by the stream route.
+export function decryptFileRange(path: string, key: Buffer, iv: string, start: number, end: number): Buffer {
+  const block = Math.floor(start / 16);
+  const counter = Buffer.alloc(16);
+  Buffer.from(iv, "base64url").copy(counter, 0);
+  counter.writeUInt32BE(block + 2, 12);
+  const from = block * 16;
+  const buf = Buffer.alloc(end - from + 1);
+  const fd = openSync(path, "r");
+  let n: number;
+  try {
+    n = readSync(fd, buf, 0, buf.length, from);
+  } finally {
+    closeSync(fd);
+  }
+  const decipher = createDecipheriv("aes-256-ctr", key, counter);
+  return Buffer.concat([decipher.update(buf.subarray(0, n)), decipher.final()]).subarray(start - from);
 }
 
 export function keyToBase64Url(key: Buffer): string {

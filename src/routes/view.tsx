@@ -2,13 +2,20 @@ import { Hono } from "hono";
 import { existsSync } from "node:fs";
 import { Readable } from "node:stream";
 import { getShareMeta, viewShare, deleteShare } from "../services/share";
-import { verifySignedToken, keyVerificationHash, keyFromBase64Url, decryptText, decryptFileStream } from "../crypto/encryption";
+import { verifySignedToken, keyVerificationHash, keyFromBase64Url, decryptText, decryptFileStream, decryptFileRange, encryptCookieValue, decryptCookieValue } from "../crypto/encryption";
+import { setCookie, getCookie } from "hono/cookie";
 import { getSessionFromCookie, getUserTokenFromSession } from "../auth/session";
 import { createNote, createStoredFile } from "../services/stored-data";
 import { config, maxUploadBytes } from "../config";
 import { MinimalLayout } from "../views/layout";
 
 const view = new Hono();
+
+const STREAM_SLICE = 4 * 1024 * 1024;
+
+function isStreamable(share: { type: string; max_views: number | null; file_mime: string | null }): boolean {
+  return share.type === "file" && !share.max_views && /^(video|audio)\//.test(share.file_mime || "");
+}
 
 function safeJsonEmbed(value: unknown): string {
   return JSON.stringify(value).replace(/</g, "\\u003c");
@@ -105,6 +112,7 @@ view.get("/:id", (c) => {
             fileName: ${share.file_name ? safeJsonEmbed(share.file_name) : "null"},
             fileMime: ${share.file_mime ? safeJsonEmbed(share.file_mime) : "null"},
             fileSize: ${share.file_size || 0},
+            canStream: ${isStreamable(share) ? "true" : "false"},
             canSave: ${canSave ? "true" : "false"}
           };
         `,
@@ -142,10 +150,32 @@ view.post("/:id/content", async (c) => {
   const { key, password, passwordToken } = body;
   if (!key) return fail("Encryption key required", 400);
 
+  const wantTicket = !isForm && body.ticket === true;
+  if (wantTicket) {
+    const meta = getShareMeta(id);
+    if (!meta || !isStreamable(meta)) return c.json({ error: "Streaming not available" }, 400);
+  }
+
   const result = await viewShare(id, key, password, passwordToken);
 
   if (!result.ok) {
     return fail(result.error, result.error === "password_required" ? 401 : 400);
+  }
+
+  if (wantTicket) {
+    // Stream ticket: encrypted HttpOnly cookie holding the share key, used by GET /view/:id/stream
+    result.fileStream?.destroy();
+    const meta = getShareMeta(id)!;
+    const now = Math.floor(Date.now() / 1000);
+    const exp = Math.min(now + 6 * 3600, meta.expires_at ?? Infinity);
+    setCookie(c, `sq_stream_${id}`, encryptCookieValue({ id, k: key, exp }, config.appSecret), {
+      httpOnly: true,
+      secure: config.baseUrl.startsWith("https"),
+      sameSite: "Strict",
+      path: `/view/${id}/stream`,
+      maxAge: exp - now,
+    });
+    return c.json({ type: "stream" });
   }
 
   if (result.type === "text") {
@@ -163,6 +193,60 @@ view.post("/:id/content", async (c) => {
   };
   if (result.fileSize) headers["Content-Length"] = String(result.fileSize);
   return new Response(Readable.toWeb(result.fileStream!) as any, { headers });
+});
+
+// GET stream - Range-capable playback of video/audio shares, authorized by the ticket cookie
+view.get("/:id/stream", (c) => {
+  const id = c.req.param("id");
+  const cookie = getCookie(c, `sq_stream_${id}`);
+  const t = cookie ? (decryptCookieValue(cookie, config.appSecret) as { id: string; k: string; exp: number } | null) : null;
+  const now = Math.floor(Date.now() / 1000);
+  if (!t || t.id !== id || t.exp <= now) return c.text("Forbidden", 403);
+
+  const share = getShareMeta(id);
+  if (
+    !share || share.type !== "file" || share.is_consumed ||
+    (share.expires_at && share.expires_at <= now) ||
+    !share.file_path || !existsSync(share.file_path) ||
+    keyVerificationHash(t.k) !== share.key_verification
+  ) {
+    return c.text("Not found", 404);
+  }
+
+  const size = share.file_size || 0;
+  const key = keyFromBase64Url(t.k);
+  const base: Record<string, string> = {
+    "Content-Type": share.file_mime || "application/octet-stream",
+    "Accept-Ranges": "bytes",
+    "Cache-Control": "private, no-store",
+  };
+
+  const m = /^bytes=(\d*)-(\d*)$/.exec(c.req.header("Range") || "");
+  if (!m || (m[1] === "" && m[2] === "")) {
+    base["Content-Length"] = String(size);
+    return new Response(Readable.toWeb(decryptFileStream(share.file_path, key, share.iv, share.auth_tag)) as any, { headers: base });
+  }
+
+  let start: number;
+  let end: number;
+  if (m[1] === "") {
+    // suffix range: last N bytes
+    start = Math.max(0, size - parseInt(m[2], 10));
+    end = size - 1;
+  } else {
+    start = parseInt(m[1], 10);
+    end = m[2] === "" ? size - 1 : parseInt(m[2], 10);
+  }
+  if (start >= size || end < start) {
+    return new Response(null, { status: 416, headers: { ...base, "Content-Range": `bytes */${size}` } });
+  }
+  end = Math.min(end, size - 1, start + STREAM_SLICE - 1);
+
+  const body = decryptFileRange(share.file_path, key, share.iv, start, end);
+  return new Response(body as any, {
+    status: 206,
+    headers: { ...base, "Content-Range": `bytes ${start}-${end}/${size}`, "Content-Length": String(body.length) },
+  });
 });
 
 // POST delete - always JSON-based, requires encryption key

@@ -98,6 +98,8 @@ data/                       # Runtime directory (gitignored)
 - Uploads are sent in 50 MB chunks (`X-Upload-Id` / `X-Upload-Offset` / `X-Upload-Total`) so they pass proxies/CDNs with a per-request cap such as Cloudflare's 100 MB; `receiveUpload` feeds one continuous encrypt stream, in-flight upload state is in memory (single process)
 - Raw upload routes (`/share/file`, `/stored/file`, `/upload/:token/file`) skip hono `bodyLimit`
 - Downloads stream via `decryptFileStream`; files over 100 MB are downloaded with a form POST to `/view/:id/content` (no blob preview)
+- Video/audio shares (not one-time/limited-view) are previewed by Range streaming (`GET /view/:id/stream`) using a 6 hour encrypted HttpOnly ticket cookie that holds the share key
+- Range reads use the CTR keystream and are not GCM-verified (the full download still is)
 - A reverse proxy in front must allow large bodies (e.g. nginx `client_max_body_size`)
 
 ### Request Data Flow
@@ -141,7 +143,8 @@ data/                       # Runtime directory (gitignored)
 | POST | `/share/file` | User+2FA | Create file share |
 | POST | `/request-data` | User+2FA | Create upload request |
 | GET | `/view/:id` | None | View page shell |
-| POST | `/view/:id/content` | None | Decrypt + return content |
+| POST | `/view/:id/content` | None | Decrypt + return content (or stream ticket) |
+| GET | `/view/:id/stream` | Stream ticket cookie | Range-capable video/audio playback |
 | POST | `/view/:id/delete` | None | Delete share |
 | GET/POST | `/upload/:token` | None | Public upload form (text) |
 | POST | `/upload/:token/file` | None | Public raw-body file upload |

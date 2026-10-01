@@ -6,7 +6,7 @@ Secure sharing of text snippets and files with end-to-end encryption, invite-onl
 
 - **Encrypted sharing** — AES-256-GCM encryption. The decryption key lives in the URL fragment (`#`) and never reaches the server in HTTP requests.
 - **Text & file sharing** — Share text snippets or upload files with optional password protection, view limits, and TTL expiry.
-- **Smart previews** — Images, video, audio, and text files preview inline. Everything else gets a download button.
+- **Smart previews** — Images, video, audio, and text files preview inline. Everything else gets a download button. Video/audio shares (not one-time/limited-view) play via HTTP Range streaming (`GET /view/:id/stream`, authorized by a 6 hour encrypted HttpOnly ticket cookie that holds the share key); range reads are not GCM-verified, the full download still is.
 - **One-time shares** — Shares that self-destruct after a single view.
 - **Request data** — Generate a one-time upload link for someone to send you data securely. You get an email with the view link and auto-generated password.
 - **Invite-only users** — No self-registration. Users are created via the management console and receive an invite email to set their password and 2FA.
