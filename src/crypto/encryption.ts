@@ -1,3 +1,6 @@
+import { createReadStream, createWriteStream, unlinkSync } from "node:fs";
+import { Readable, Transform, pipeline as pipelineCb } from "node:stream";
+import { pipeline } from "node:stream/promises";
 import { createCipheriv, createDecipheriv, createHmac, createHash, randomBytes, timingSafeEqual, scryptSync } from "node:crypto";
 
 const ALGORITHM = "aes-256-gcm";
@@ -43,34 +46,53 @@ export function decryptText(
   return decrypted.toString("utf-8");
 }
 
-export function encryptFile(
-  data: Buffer,
-  key: Buffer
-): { encrypted: Buffer; iv: string; authTag: string } {
+export class FileTooLargeError extends Error {
+  constructor() {
+    super("File too large");
+    this.name = "FileTooLargeError";
+  }
+}
+
+export async function encryptStreamToFile(
+  source: Readable,
+  key: Buffer,
+  destPath: string,
+  maxBytes: number
+): Promise<{ iv: string; authTag: string; size: number }> {
   const iv = randomBytes(12);
   const cipher = createCipheriv(ALGORITHM, key, iv);
-  const encrypted = Buffer.concat([cipher.update(data), cipher.final()]);
-  const authTag = cipher.getAuthTag();
+  let size = 0;
+  const counter = new Transform({
+    transform(chunk, _enc, cb) {
+      size += chunk.length;
+      if (size > maxBytes) return cb(new FileTooLargeError());
+      cb(null, chunk);
+    },
+  });
+  try {
+    await pipeline(source, counter, cipher, createWriteStream(destPath));
+  } catch (err) {
+    try { unlinkSync(destPath); } catch {}
+    throw err;
+  }
   return {
-    encrypted,
     iv: iv.toString("base64url"),
-    authTag: authTag.toString("base64url"),
+    authTag: cipher.getAuthTag().toString("base64url"),
+    size,
   };
 }
 
-export function decryptFile(
-  encrypted: Buffer,
+export function decryptFileStream(
+  path: string,
   key: Buffer,
   iv: string,
   authTag: string
-): Buffer {
-  const decipher = createDecipheriv(
-    ALGORITHM,
-    key,
-    Buffer.from(iv, "base64url")
-  );
+): Readable {
+  const decipher = createDecipheriv(ALGORITHM, key, Buffer.from(iv, "base64url"));
   decipher.setAuthTag(Buffer.from(authTag, "base64url"));
-  return Buffer.concat([decipher.update(encrypted), decipher.final()]);
+  // pipeline destroys the decipher (the returned stream) with the error if the read stream fails
+  pipelineCb(createReadStream(path), decipher, () => {});
+  return decipher;
 }
 
 export function keyToBase64Url(key: Buffer): string {

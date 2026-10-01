@@ -2,7 +2,8 @@ import { nanoid } from "nanoid";
 import { randomBytes } from "node:crypto";
 import { db } from "../db/connection";
 import { config } from "../config";
-import { createTextShare, createFileShare } from "./share";
+import type { Readable } from "node:stream";
+import { createTextShare, createFileShare, deleteShare } from "./share";
 import { sendUploadNotification } from "./email";
 
 interface UploadRequestRow {
@@ -49,16 +50,10 @@ export function getUploadRequest(token: string): UploadRequestRow | null {
 
 export async function fulfillUploadRequest(
   token: string,
-  data: { type: "text"; text: string } | { type: "file"; fileData: Buffer; fileName: string; fileMime: string; fileSize: number }
+  data: { type: "text"; text: string } | { type: "file"; source: Readable; maxBytes: number; fileName: string; fileMime: string }
 ): Promise<{ ok: true } | { ok: false; error: string }> {
-  // Atomic consumption: UPDATE ... WHERE is_consumed = 0 RETURNING *
-  const now = Math.floor(Date.now() / 1000);
-  const request = db
-    .query<UploadRequestRow, [string, number]>(
-      "UPDATE upload_requests SET is_consumed = 1 WHERE token = ? AND is_consumed = 0 AND expires_at > ? RETURNING *"
-    )
-    .get(token, now);
-
+  // Non-consuming validity check first, so a failed big upload does not burn the one-time link
+  const request = getUploadRequest(token);
   if (!request) return { ok: false, error: "Upload request not found, expired, or already used" };
 
   // Generate a random password for the share
@@ -74,12 +69,24 @@ export async function fulfillUploadRequest(
   } else {
     shareResult = await createFileShare({
       userId: request.user_id,
-      fileData: data.fileData,
+      source: data.source,
+      maxBytes: data.maxBytes,
       fileName: data.fileName,
       fileMime: data.fileMime,
-      fileSize: data.fileSize,
       password,
     });
+  }
+
+  // Atomic consumption: UPDATE ... WHERE is_consumed = 0 RETURNING *
+  const now = Math.floor(Date.now() / 1000);
+  const consumed = db
+    .query<UploadRequestRow, [string, number]>(
+      "UPDATE upload_requests SET is_consumed = 1 WHERE token = ? AND is_consumed = 0 AND expires_at > ? RETURNING *"
+    )
+    .get(token, now);
+  if (!consumed) {
+    deleteShare(shareResult.id, shareResult.key);
+    return { ok: false, error: "Upload request not found, expired, or already used" };
   }
 
   // Get user email

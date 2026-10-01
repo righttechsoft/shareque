@@ -1,10 +1,11 @@
 import { Hono } from "hono";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync } from "node:fs";
+import { Readable } from "node:stream";
 import { getShareMeta, viewShare, deleteShare } from "../services/share";
-import { verifySignedToken, keyVerificationHash, keyFromBase64Url, decryptText, decryptFile } from "../crypto/encryption";
+import { verifySignedToken, keyVerificationHash, keyFromBase64Url, decryptText, decryptFileStream } from "../crypto/encryption";
 import { getSessionFromCookie, getUserTokenFromSession } from "../auth/session";
 import { createNote, createStoredFile } from "../services/stored-data";
-import { config } from "../config";
+import { config, maxUploadBytes } from "../config";
 import { MinimalLayout } from "../views/layout";
 
 const view = new Hono();
@@ -103,6 +104,7 @@ view.get("/:id", (c) => {
             hasPassword: ${share.has_password ? "true" : "false"},
             fileName: ${share.file_name ? safeJsonEmbed(share.file_name) : "null"},
             fileMime: ${share.file_mime ? safeJsonEmbed(share.file_mime) : "null"},
+            fileSize: ${share.file_size || 0},
             canSave: ${canSave ? "true" : "false"}
           };
         `,
@@ -112,41 +114,55 @@ view.get("/:id", (c) => {
   );
 });
 
-// POST content - decrypt and return
+// POST content - decrypt and return (JSON body from fetch, or form body for streamed downloads)
 view.post("/:id/content", async (c) => {
   const id = c.req.param("id");
 
+  const isForm = (c.req.header("Content-Type") || "").startsWith("application/x-www-form-urlencoded");
+  const fail = (error: string, status: number) =>
+    isForm
+      ? c.html(
+          <MinimalLayout title="Error">
+            <div class="text-center" style="margin-top:4rem">
+              <div class="alert alert-error">{error === "password_required" ? "Password required" : error}</div>
+              <a href="javascript:history.back()">Back</a>
+            </div>
+          </MinimalLayout>,
+          status as any
+        )
+      : c.json({ error }, status as any);
+
   let body: any;
   try {
-    body = await c.req.json();
+    body = isForm ? await c.req.parseBody() : await c.req.json();
   } catch {
-    return c.json({ error: "Invalid request" }, 400);
+    return fail("Invalid request", 400);
   }
 
   const { key, password, passwordToken } = body;
-  if (!key) return c.json({ error: "Encryption key required" }, 400);
+  if (!key) return fail("Encryption key required", 400);
 
   const result = await viewShare(id, key, password, passwordToken);
 
   if (!result.ok) {
-    return c.json({ error: result.error }, result.error === "password_required" ? 401 : 400);
+    return fail(result.error, result.error === "password_required" ? 401 : 400);
   }
 
   if (result.type === "text") {
     return c.json({ type: "text", content: result.content });
   }
 
-  // File - return as binary with metadata headers
+  // File - stream as binary with metadata headers
   // Sanitize filename for Content-Disposition
   const safeName = sanitizeFilename(result.fileName || "download");
-  return new Response(result.fileData, {
-    headers: {
-      "Content-Type": result.fileMime || "application/octet-stream",
-      "Content-Disposition": `inline; filename*=UTF-8''${safeName}`,
-      "X-File-Name": result.fileName || "download",
-      "X-File-Mime": result.fileMime || "application/octet-stream",
-    },
-  });
+  const headers: Record<string, string> = {
+    "Content-Type": result.fileMime || "application/octet-stream",
+    "Content-Disposition": `${isForm ? "attachment" : "inline"}; filename*=UTF-8''${safeName}`,
+    "X-File-Name": result.fileName || "download",
+    "X-File-Mime": result.fileMime || "application/octet-stream",
+  };
+  if (result.fileSize) headers["Content-Length"] = String(result.fileSize);
+  return new Response(Readable.toWeb(result.fileStream!) as any, { headers });
 });
 
 // POST delete - always JSON-based, requires encryption key
@@ -249,18 +265,21 @@ view.post("/:id/save", async (c) => {
   if (!share.file_path || !existsSync(share.file_path)) {
     return c.json({ error: "File not found" }, 404);
   }
-  const encryptedFile = readFileSync(share.file_path);
-  const fileData = decryptFile(encryptedFile, shareKey, share.iv, share.auth_tag);
   const title = (reqTitle as string)?.trim() || share.file_name || `Saved file (${new Date().toLocaleDateString()})`;
-  createStoredFile({
-    userId,
-    title,
-    fileData,
-    fileName: share.file_name || "download",
-    fileMime: share.file_mime || "application/octet-stream",
-    fileSize: share.file_size || fileData.length,
-    userToken,
-  });
+  try {
+    await createStoredFile({
+      userId,
+      title,
+      source: decryptFileStream(share.file_path, shareKey, share.iv, share.auth_tag),
+      maxBytes: maxUploadBytes(),
+      fileName: share.file_name || "download",
+      fileMime: share.file_mime || "application/octet-stream",
+      userToken,
+    });
+  } catch (err) {
+    console.error("[save]", err);
+    return c.json({ error: "Failed to save file (too large or corrupted)" }, 400);
+  }
   return c.json({ saved: true });
 });
 

@@ -93,6 +93,12 @@ data/                       # Runtime directory (gitignored)
 - Original filename, MIME type, size stored in DB
 - Smart preview: images as `<img>`, video as `<video>`, audio as `<audio>`, text as `<pre>`, else download
 
+### Streaming Upload/Download (large files)
+- File uploads are sent by `client.js` (XHR) as the raw request body (`X-File-Name`, `X-Upload-Fields` headers), not multipart; `src/services/upload-stream.ts` parses them and `encryptStreamToFile` encrypts straight to disk with a byte limit
+- Raw upload routes (`/share/file`, `/stored/file`, `/upload/:token/file`) skip hono `bodyLimit`
+- Downloads stream via `decryptFileStream`; files over 100 MB are downloaded with a form POST to `/view/:id/content` (no blob preview)
+- A reverse proxy in front must allow large bodies (e.g. nginx `client_max_body_size`)
+
 ### Request Data Flow
 1. User creates upload request -> gets `/upload/{token}` link
 2. External person opens link, uploads text or file
@@ -136,7 +142,8 @@ data/                       # Runtime directory (gitignored)
 | GET | `/view/:id` | None | View page shell |
 | POST | `/view/:id/content` | None | Decrypt + return content |
 | POST | `/view/:id/delete` | None | Delete share |
-| GET/POST | `/upload/:token` | None | Public upload form |
+| GET/POST | `/upload/:token` | None | Public upload form (text) |
+| POST | `/upload/:token/file` | None | Public raw-body file upload |
 | POST | `/api/webauthn/*` | Session | WebAuthn registration/auth |
 | POST | `/manage/api/webauthn/*` | Manage session | Management console WebAuthn |
 
@@ -147,4 +154,4 @@ See `.env.example` for all variables. Key ones:
 - `SMTP_*` - Email sending config
 - `WEBAUTHN_*` - WebAuthn relying party config
 - `CLEANUP_INTERVAL` - Minutes between cleanup runs (default: 5)
-- `MAX_FILE_SIZE` - Max upload in MB (default: 100)
+- `MAX_FILE_SIZE` - Max upload in MB (default: 2048). Effective limit = min(MAX_FILE_SIZE, 50% of free disk space), computed per request

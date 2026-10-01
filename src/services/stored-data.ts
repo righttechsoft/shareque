@@ -1,8 +1,9 @@
 import { nanoid } from "nanoid";
-import { mkdirSync, writeFileSync, readFileSync, unlinkSync, existsSync, readdirSync, rmdirSync } from "node:fs";
+import { mkdirSync, unlinkSync, existsSync, readdirSync, rmdirSync } from "node:fs";
 import { join, resolve } from "node:path";
+import type { Readable } from "node:stream";
 import { db } from "../db/connection";
-import { encryptText, decryptText, encryptFile, decryptFile } from "../crypto/encryption";
+import { encryptText, decryptText, encryptStreamToFile, decryptFileStream } from "../crypto/encryption";
 import { config } from "../config";
 
 interface StoredDataRow {
@@ -68,28 +69,36 @@ export function createNote(opts: {
   return id;
 }
 
-export function createStoredFile(opts: {
+export async function createStoredFile(opts: {
   userId: string;
   title: string;
-  fileData: Buffer;
+  source: Readable;
+  maxBytes: number;
   fileName: string;
   fileMime: string;
-  fileSize: number;
   userToken: Buffer;
-}): string {
+}): Promise<string> {
   const id = nanoid(12);
-  const { encrypted, iv, authTag } = encryptFile(opts.fileData, opts.userToken);
 
   const dir = userStoredDir(opts.userId);
   mkdirSync(dir, { recursive: true });
   const filePath = join(dir, `${id}.enc`);
-  writeFileSync(filePath, encrypted);
+  const { iv, authTag, size } = await encryptStreamToFile(opts.source, opts.userToken, filePath, opts.maxBytes);
+  if (size === 0) {
+    try { unlinkSync(filePath); } catch {}
+    throw new Error("Empty file");
+  }
 
-  db.run(
-    `INSERT INTO stored_data (id, user_id, type, title, file_path, file_name, file_mime, file_size, iv, auth_tag)
-     VALUES (?, ?, 'file', ?, ?, ?, ?, ?, ?, ?)`,
-    [id, opts.userId, opts.title, filePath, opts.fileName, opts.fileMime, opts.fileSize, iv, authTag]
-  );
+  try {
+    db.run(
+      `INSERT INTO stored_data (id, user_id, type, title, file_path, file_name, file_mime, file_size, iv, auth_tag)
+       VALUES (?, ?, 'file', ?, ?, ?, ?, ?, ?, ?)`,
+      [id, opts.userId, opts.title, filePath, opts.fileName, opts.fileMime, size, iv, authTag]
+    );
+  } catch (err) {
+    try { unlinkSync(filePath); } catch {}
+    throw err;
+  }
   return id;
 }
 
@@ -209,11 +218,10 @@ export function getNote(
   return { title: row.title, content };
 }
 
-export function getStoredFile(
+export function getStoredFileMeta(
   id: string,
-  userId: string,
-  userToken: Buffer
-): { title: string; fileData: Buffer; fileName: string; fileMime: string; fileSize: number } | null {
+  userId: string
+): { title: string; absPath: string; iv: string; authTag: string; fileName: string; fileMime: string; fileSize: number | null } | null {
   const row = db
     .query<StoredDataRow, [string, string]>(
       "SELECT * FROM stored_data WHERE id = ? AND user_id = ? AND type = 'file'"
@@ -225,14 +233,30 @@ export function getStoredFile(
   if (!absPath.startsWith(resolve(config.storedDir))) return null;
   if (!existsSync(absPath)) return null;
 
-  const encrypted = readFileSync(absPath);
-  const fileData = decryptFile(encrypted, userToken, row.iv, row.auth_tag);
   return {
     title: row.title,
-    fileData,
+    absPath,
+    iv: row.iv,
+    authTag: row.auth_tag,
     fileName: row.file_name,
     fileMime: row.file_mime || "application/octet-stream",
-    fileSize: row.file_size || fileData.length,
+    fileSize: row.file_size,
+  };
+}
+
+export function getStoredFile(
+  id: string,
+  userId: string,
+  userToken: Buffer
+): { title: string; fileStream: Readable; fileName: string; fileMime: string; fileSize: number | null } | null {
+  const meta = getStoredFileMeta(id, userId);
+  if (!meta) return null;
+  return {
+    title: meta.title,
+    fileStream: decryptFileStream(meta.absPath, userToken, meta.iv, meta.authTag),
+    fileName: meta.fileName,
+    fileMime: meta.fileMime,
+    fileSize: meta.fileSize,
   };
 }
 

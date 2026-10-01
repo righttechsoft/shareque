@@ -30,13 +30,12 @@ app.use("*", securityHeaders);
 // CSRF protection on all routes
 app.use("*", csrfProtection);
 
-// Body limits: higher for file upload routes, 1MB default for everything else
-const fileLimitMw = bodyLimit({ maxSize: config.maxFileSize + 1024 * 1024 });
+// Body limits: 1MB default; raw file upload routes skip bodyLimit (readRawUpload + encryptStreamToFile enforce the limit)
 const defaultLimitMw = bodyLimit({ maxSize: 1024 * 1024 });
 app.use("*", (c, next) => {
   const path = c.req.path;
-  if (path === "/share/file" || path === "/stored/file" || path.startsWith("/upload/")) {
-    return fileLimitMw(c, next);
+  if (path === "/share/file" || path === "/stored/file" || /^\/upload\/[^/]+\/file$/.test(path)) {
+    return next();
   }
   return defaultLimitMw(c, next);
 });
@@ -114,4 +113,7 @@ export default {
   port: config.port,
   hostname: config.host,
   fetch: app.fetch,
+  maxRequestBodySize: config.maxFileSize + 1024 * 1024,
+  // Bun's default 10s idle timeout would kill long server-side work (e.g. re-encrypting a 2GB file)
+  idleTimeout: 255,
 };

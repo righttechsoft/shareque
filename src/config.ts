@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, unlinkSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, statfsSync, unlinkSync } from "node:fs";
 import { resolve } from "node:path";
 
 const envPath = resolve(import.meta.dir, "../.env");
@@ -60,8 +60,16 @@ export const config = {
   },
 
   cleanupInterval: parseInt(env("CLEANUP_INTERVAL", "5"), 10),
-  maxFileSize: parseInt(env("MAX_FILE_SIZE", "100"), 10) * 1024 * 1024,
+  maxFileSize: parseInt(env("MAX_FILE_SIZE", "2048"), 10) * 1024 * 1024,
   dataDir: resolve(import.meta.dir, "../data"),
   uploadsDir: resolve(import.meta.dir, "../data/uploads"),
   storedDir: resolve(import.meta.dir, "../data/stored"),
 };
+
+// Effective upload limit: min(MAX_FILE_SIZE, 50% of free disk space), computed per request
+// ponytail: per-upload check, concurrent uploads can together exceed 50% of free space; add a reservation counter if that matters
+export function maxUploadBytes(): number {
+  mkdirSync(config.dataDir, { recursive: true });
+  const st = statfsSync(config.dataDir);
+  return Math.min(config.maxFileSize, Math.floor((Number(st.bavail) * Number(st.bsize)) / 2));
+}

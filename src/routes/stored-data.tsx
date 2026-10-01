@@ -5,6 +5,7 @@ import {
   createStoredFile,
   getNote,
   getStoredFile,
+  getStoredFileMeta,
   updateNote,
   deleteStoredItem,
   createGroup,
@@ -13,7 +14,10 @@ import {
   moveStoredItem,
 } from "../services/stored-data";
 import { Layout } from "../views/layout";
-import { config } from "../config";
+import { maxUploadBytes } from "../config";
+import { readRawUpload } from "../services/upload-stream";
+import { FileTooLargeError } from "../crypto/encryption";
+import { Readable } from "node:stream";
 
 const stored = new Hono();
 
@@ -103,32 +107,42 @@ stored.post("/stored/file", async (c) => {
   const userToken = requireToken(c);
   if (!userToken) return c.redirect("/dashboard?tab=stored");
 
-  const body = await c.req.parseBody();
-  const title = (body.title as string)?.trim();
-  const file = body.file as File;
-
-  if (!title || !file || file.size === 0) return c.redirect("/dashboard?tab=stored");
-  if (file.size > config.maxFileSize) {
+  const tooLarge = (
+    <Layout title="Error">
+      <div class="alert alert-error">
+        File too large. Maximum size is {Math.round(maxUploadBytes() / 1024 / 1024)}MB.
+      </div>
+      <a href="/dashboard">Back to Dashboard</a>
+    </Layout>
+  );
+  const raw = readRawUpload(c);
+  if (!raw.ok) {
+    if (raw.tooLarge) return c.html(tooLarge);
     return c.html(
       <Layout title="Error">
-        <div class="alert alert-error">
-          File too large. Maximum size is {config.maxFileSize / 1024 / 1024}MB.
-        </div>
+        <div class="alert alert-error">{raw.error}</div>
         <a href="/dashboard">Back to Dashboard</a>
       </Layout>
     );
   }
+  const title = raw.fields.title?.trim();
+  if (!title) return c.redirect("/dashboard?tab=stored");
 
-  const fileBuffer = Buffer.from(await file.arrayBuffer());
-  createStoredFile({
-    userId,
-    title,
-    fileData: fileBuffer,
-    fileName: file.name,
-    fileMime: file.type || "application/octet-stream",
-    fileSize: file.size,
-    userToken,
-  });
+  try {
+    await createStoredFile({
+      userId,
+      title,
+      source: raw.source,
+      maxBytes: raw.maxBytes,
+      fileName: raw.fileName,
+      fileMime: raw.fileMime,
+      userToken,
+    });
+  } catch (err) {
+    if (err instanceof FileTooLargeError) return c.html(tooLarge);
+    if (err instanceof Error && err.message === "Empty file") return c.redirect("/dashboard?tab=stored");
+    throw err;
+  }
 
   return c.redirect("/dashboard?tab=stored");
 });
@@ -157,14 +171,14 @@ stored.get("/stored/content/:id", (c) => {
     );
   }
 
-  const file = getStoredFile(id, userId, userToken);
+  const file = getStoredFileMeta(id, userId);
   if (file) {
     return c.html(
       <>
         <h3 style="margin-top:0">{file.title}</h3>
         <div class="stored-file-info">
           <p><strong>{file.fileName}</strong></p>
-          <p class="file-meta">{file.fileMime} &middot; {formatSize(file.fileSize)}</p>
+          <p class="file-meta">{file.fileMime} &middot; {formatSize(file.fileSize || 0)}</p>
         </div>
         <div class="stored-content-actions">
           <a href={`/stored/file/${id}`} class="outline btn-sm" role="button">Download</a>
@@ -203,13 +217,12 @@ stored.get("/stored/file/:id", (c) => {
     );
   }
 
-  return new Response(file.fileData, {
-    headers: {
-      "Content-Type": file.fileMime,
-      "Content-Disposition": `attachment; filename="${file.fileName.replace(/"/g, '\\"')}"`,
-      "Content-Length": file.fileData.length.toString(),
-    },
-  });
+  const headers: Record<string, string> = {
+    "Content-Type": file.fileMime,
+    "Content-Disposition": `attachment; filename="${file.fileName.replace(/"/g, '\\"')}"`,
+  };
+  if (file.fileSize) headers["Content-Length"] = file.fileSize.toString();
+  return new Response(Readable.toWeb(file.fileStream) as any, { headers });
 });
 
 // --- Delete Stored Item ---

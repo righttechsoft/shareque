@@ -1,13 +1,14 @@
 import { nanoid } from "nanoid";
-import { mkdirSync, writeFileSync, readFileSync, unlinkSync, rmdirSync, existsSync, readdirSync } from "node:fs";
+import { mkdirSync, unlinkSync, rmdirSync, existsSync, readdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
+import type { Readable } from "node:stream";
 import { db } from "../db/connection";
 import {
   generateKey,
   encryptText,
   decryptText,
-  encryptFile,
-  decryptFile,
+  encryptStreamToFile,
+  decryptFileStream,
   keyToBase64Url,
   keyFromBase64Url,
   keyVerificationHash,
@@ -46,10 +47,10 @@ interface CreateTextOptions {
 
 interface CreateFileOptions {
   userId: string;
-  fileData: Buffer;
+  source: Readable;
+  maxBytes: number;
   fileName: string;
   fileMime: string;
-  fileSize: number;
   password?: string;
   maxViews?: number;
   expiresAt?: number;
@@ -97,7 +98,6 @@ export async function createFileShare(opts: CreateFileOptions): Promise<ShareRes
   const id = nanoid(12);
   const key = generateKey();
   const keyB64 = keyToBase64Url(key);
-  const { encrypted, iv, authTag } = encryptFile(opts.fileData, key);
   const kvHash = keyVerificationHash(keyB64);
 
   const now = new Date();
@@ -106,32 +106,41 @@ export async function createFileShare(opts: CreateFileOptions): Promise<ShareRes
   mkdirSync(uploadDir, { recursive: true });
 
   const filePath = `${uploadDir}/${id}.enc`;
-  writeFileSync(filePath, encrypted);
-
-  let passwordToken: string | undefined;
-  if (opts.password) {
-    const bcryptHash = await Bun.password.hash(opts.password);
-    passwordToken = createSignedToken({ h: bcryptHash }, config.appSecret);
+  const { iv, authTag, size } = await encryptStreamToFile(opts.source, key, filePath, opts.maxBytes);
+  if (size === 0) {
+    try { unlinkSync(filePath); } catch {}
+    throw new Error("Empty file");
   }
 
-  db.run(
-    `INSERT INTO shares (id, user_id, type, file_path, file_name, file_mime, file_size, iv, auth_tag, key_verification, has_password, max_views, expires_at)
-     VALUES (?, ?, 'file', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [
-      id,
-      opts.userId,
-      filePath,
-      opts.fileName,
-      opts.fileMime,
-      opts.fileSize,
-      iv,
-      authTag,
-      kvHash,
-      opts.password ? 1 : 0,
-      opts.maxViews ?? null,
-      opts.expiresAt ?? null,
-    ]
-  );
+  let passwordToken: string | undefined;
+  try {
+    if (opts.password) {
+      const bcryptHash = await Bun.password.hash(opts.password);
+      passwordToken = createSignedToken({ h: bcryptHash }, config.appSecret);
+    }
+
+    db.run(
+      `INSERT INTO shares (id, user_id, type, file_path, file_name, file_mime, file_size, iv, auth_tag, key_verification, has_password, max_views, expires_at)
+       VALUES (?, ?, 'file', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        id,
+        opts.userId,
+        filePath,
+        opts.fileName,
+        opts.fileMime,
+        size,
+        iv,
+        authTag,
+        kvHash,
+        opts.password ? 1 : 0,
+        opts.maxViews ?? null,
+        opts.expiresAt ?? null,
+      ]
+    );
+  } catch (err) {
+    try { unlinkSync(filePath); } catch {}
+    throw err;
+  }
 
   return { id, key: keyB64, passwordToken };
 }
@@ -148,7 +157,7 @@ export async function viewShare(
   password?: string,
   passwordToken?: string
 ): Promise<
-  | { ok: true; type: string; content?: string; fileData?: Buffer; fileName?: string; fileMime?: string; fileSize?: number }
+  | { ok: true; type: string; content?: string; fileStream?: Readable; fileName?: string; fileMime?: string; fileSize?: number }
   | { ok: false; error: string }
 > {
   const share = db
@@ -175,6 +184,7 @@ export async function viewShare(
   }
 
   // Check and increment view count atomically
+  let consumedFilePath: string | null = null;
   if (share.max_views) {
     const result = db
       .query<ShareRow, [string]>(
@@ -187,10 +197,7 @@ export async function viewShare(
       .get(id);
     if (!result) return { ok: false, error: "Share has been consumed" };
 
-    // If consumed, immediately delete file
-    if (result.is_consumed && result.file_path && existsSync(result.file_path)) {
-      removeFileAndEmptyDir(result.file_path);
-    }
+    consumedFilePath = result.is_consumed ? result.file_path : null;
   } else {
     db.run("UPDATE shares SET view_count = view_count + 1 WHERE id = ?", [id]);
   }
@@ -211,12 +218,16 @@ export async function viewShare(
   if (!share.file_path || !existsSync(share.file_path)) {
     return { ok: false, error: "File not found" };
   }
-  const encryptedFile = readFileSync(share.file_path);
-  const fileData = decryptFile(encryptedFile, key, share.iv, share.auth_tag);
+  const fileStream = decryptFileStream(share.file_path, key, share.iv, share.auth_tag);
+  // If consumed, delete the file only after the stream has closed
+  if (consumedFilePath) {
+    const p = consumedFilePath;
+    fileStream.on("close", () => removeFileAndEmptyDir(p));
+  }
   return {
     ok: true,
     type: "file",
-    fileData,
+    fileStream,
     fileName: share.file_name!,
     fileMime: share.file_mime!,
     fileSize: share.file_size!,

@@ -11,7 +11,9 @@ import {
   type GroupListItem,
 } from "../services/stored-data";
 import { Layout } from "../views/layout";
-import { config } from "../config";
+import { config, maxUploadBytes } from "../config";
+import { readRawUpload } from "../services/upload-stream";
+import { FileTooLargeError } from "../crypto/encryption";
 
 const dashboard = new Hono();
 
@@ -148,7 +150,7 @@ dashboard.get("/dashboard", (c) => {
 
       {/* File Share Tab */}
       <div class="tab-content" id="tab-file">
-        <form method="POST" action="/share/file" enctype="multipart/form-data">
+        <form method="POST" action="/share/file" data-stream-upload data-max-size={maxUploadBytes()}>
           <label>
             File
             <input type="file" name="file" required />
@@ -386,7 +388,7 @@ dashboard.get("/dashboard", (c) => {
               </details>
               <details>
                 <summary>Save a File</summary>
-                <form method="POST" action="/stored/file" enctype="multipart/form-data">
+                <form method="POST" action="/stored/file" data-stream-upload data-max-size={maxUploadBytes()}>
                   <label>
                     Title
                     <input type="text" name="title" required placeholder="File title" />
@@ -474,8 +476,25 @@ dashboard.post("/share/text", async (c) => {
 // --- Create File Share ---
 dashboard.post("/share/file", async (c) => {
   const userId = c.get("userId") as string;
-  const body = await c.req.parseBody();
-  const file = body.file as File;
+  const raw = readRawUpload(c);
+  const tooLarge = (
+    <Layout title="Error">
+      <div class="alert alert-error">
+        File too large. Maximum size is {Math.round(maxUploadBytes() / 1024 / 1024)}MB.
+      </div>
+      <a href="/dashboard">Back to Dashboard</a>
+    </Layout>
+  );
+  if (!raw.ok) {
+    if (raw.tooLarge) return c.html(tooLarge);
+    return c.html(
+      <Layout title="Error">
+        <div class="alert alert-error">{raw.error}</div>
+        <a href="/dashboard">Back to Dashboard</a>
+      </Layout>
+    );
+  }
+  const body = raw.fields;
   const usePassword = body.use_password === "1";
   const password = (body["shareque-ps"] as string) || undefined;
   const oneTime = body.one_time === "1";
@@ -483,32 +502,25 @@ dashboard.post("/share/file", async (c) => {
   const ttlValue = parseInt(body.ttl_value as string, 10) || 0;
   const ttlUnit = (body.ttl_unit as string) || "hours";
 
-  if (!file || file.size === 0) return c.redirect("/dashboard");
-  if (file.size > config.maxFileSize) {
-    return c.html(
-      <Layout title="Error">
-        <div class="alert alert-error">
-          File too large. Maximum size is {config.maxFileSize / 1024 / 1024}MB.
-        </div>
-        <a href="/dashboard">Back to Dashboard</a>
-      </Layout>
-    );
-  }
-
   const expiresAt = parseTtl(body);
 
-  const fileBuffer = Buffer.from(await file.arrayBuffer());
-
-  const result = await createFileShare({
-    userId,
-    fileData: fileBuffer,
-    fileName: file.name,
-    fileMime: file.type || "application/octet-stream",
-    fileSize: file.size,
-    password: usePassword ? password : undefined,
-    maxViews: oneTime ? 1 : undefined,
-    expiresAt,
-  });
+  let result;
+  try {
+    result = await createFileShare({
+      userId,
+      source: raw.source,
+      maxBytes: raw.maxBytes,
+      fileName: raw.fileName,
+      fileMime: raw.fileMime,
+      password: usePassword ? password : undefined,
+      maxViews: oneTime ? 1 : undefined,
+      expiresAt,
+    });
+  } catch (err) {
+    if (err instanceof FileTooLargeError) return c.html(tooLarge);
+    if (err instanceof Error && err.message === "Empty file") return c.redirect("/dashboard");
+    throw err;
+  }
 
   // Save preferences to cookie
   const prev = getUserPreferences(c);

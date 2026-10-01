@@ -1,7 +1,9 @@
 import { Hono } from "hono";
 import { getUploadRequest, fulfillUploadRequest } from "../services/upload-request";
 import { MinimalLayout } from "../views/layout";
-import { config } from "../config";
+import { maxUploadBytes } from "../config";
+import { readRawUpload } from "../services/upload-stream";
+import { FileTooLargeError } from "../crypto/encryption";
 
 const upload = new Hono();
 
@@ -44,8 +46,7 @@ upload.get("/:token", (c) => {
         </div>
 
         <div class="tab-content" id="tab-upload-file">
-          <form method="POST" action={`/upload/${token}`} enctype="multipart/form-data">
-            <input type="hidden" name="type" value="file" />
+          <form method="POST" action={`/upload/${token}/file`} data-stream-upload data-max-size={maxUploadBytes()}>
             <label>
               File
               <input type="file" name="file" required />
@@ -58,59 +59,7 @@ upload.get("/:token", (c) => {
   );
 });
 
-upload.post("/:token", async (c) => {
-  const token = c.req.param("token");
-  const body = await c.req.parseBody();
-  const type = body.type as string;
-
-  let result;
-  if (type === "file") {
-    const file = body.file as File;
-    if (!file || file.size === 0) {
-      return c.html(
-        <MinimalLayout title="Error">
-          <div style="max-width:600px;margin:4rem auto">
-            <div class="alert alert-error">Please select a file.</div>
-            <a href={`/upload/${token}`}>Try again</a>
-          </div>
-        </MinimalLayout>
-      );
-    }
-    if (file.size > config.maxFileSize) {
-      return c.html(
-        <MinimalLayout title="Error">
-          <div style="max-width:600px;margin:4rem auto">
-            <div class="alert alert-error">
-              File too large. Maximum size is {config.maxFileSize / 1024 / 1024}MB.
-            </div>
-            <a href={`/upload/${token}`}>Try again</a>
-          </div>
-        </MinimalLayout>
-      );
-    }
-    const fileBuffer = Buffer.from(await file.arrayBuffer());
-    result = await fulfillUploadRequest(token, {
-      type: "file",
-      fileData: fileBuffer,
-      fileName: file.name,
-      fileMime: file.type || "application/octet-stream",
-      fileSize: file.size,
-    });
-  } else {
-    const text = body.text as string;
-    if (!text?.trim()) {
-      return c.html(
-        <MinimalLayout title="Error">
-          <div style="max-width:600px;margin:4rem auto">
-            <div class="alert alert-error">Please enter some text.</div>
-            <a href={`/upload/${token}`}>Try again</a>
-          </div>
-        </MinimalLayout>
-      );
-    }
-    result = await fulfillUploadRequest(token, { type: "text", text });
-  }
-
+function uploadResultPage(c: any, result: { ok: true } | { ok: false; error: string }) {
   if (!result.ok) {
     return c.html(
       <MinimalLayout title="Error">
@@ -131,6 +80,68 @@ upload.post("/:token", async (c) => {
       </div>
     </MinimalLayout>
   );
+}
+
+upload.post("/:token", async (c) => {
+  const token = c.req.param("token");
+  const body = await c.req.parseBody();
+  const text = body.text as string;
+  if (!text?.trim()) {
+    return c.html(
+      <MinimalLayout title="Error">
+        <div style="max-width:600px;margin:4rem auto">
+          <div class="alert alert-error">Please enter some text.</div>
+          <a href={`/upload/${token}`}>Try again</a>
+        </div>
+      </MinimalLayout>
+    );
+  }
+  return uploadResultPage(c, await fulfillUploadRequest(token, { type: "text", text }));
+});
+
+upload.post("/:token/file", async (c) => {
+  const token = c.req.param("token");
+  const raw = readRawUpload(c);
+  if (!raw.ok) {
+    return c.html(
+      <MinimalLayout title="Error">
+        <div style="max-width:600px;margin:4rem auto">
+          <div class="alert alert-error">
+            {raw.tooLarge ? `File too large. Maximum size is ${Math.round(maxUploadBytes() / 1024 / 1024)}MB.` : raw.error}
+          </div>
+          <a href={`/upload/${token}`}>Try again</a>
+        </div>
+      </MinimalLayout>
+    );
+  }
+
+  let result;
+  try {
+    result = await fulfillUploadRequest(token, {
+      type: "file",
+      source: raw.source,
+      maxBytes: raw.maxBytes,
+      fileName: raw.fileName,
+      fileMime: raw.fileMime,
+    });
+  } catch (err) {
+    const message =
+      err instanceof FileTooLargeError
+        ? `File too large. Maximum size is ${Math.round(raw.maxBytes / 1024 / 1024)}MB.`
+        : err instanceof Error && err.message === "Empty file"
+          ? "Please select a file."
+          : "Upload failed.";
+    if (message === "Upload failed.") console.error("[upload]", err);
+    return c.html(
+      <MinimalLayout title="Error">
+        <div style="max-width:600px;margin:4rem auto">
+          <div class="alert alert-error">{message}</div>
+          <a href={`/upload/${token}`}>Try again</a>
+        </div>
+      </MinimalLayout>
+    );
+  }
+  return uploadResultPage(c, result);
 });
 
 export default upload;

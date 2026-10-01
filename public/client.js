@@ -139,6 +139,75 @@ document.addEventListener('htmx:afterSettle', function(e) {
   }
 });
 
+// === Streamed file upload (raw body via XHR, see src/services/upload-stream.ts) ===
+document.addEventListener('submit', function(e) {
+  const form = e.target;
+  if (!form.matches || !form.matches('form[data-stream-upload]')) return;
+  e.preventDefault();
+
+  const fileInput = form.querySelector('input[type=file]');
+  const file = fileInput && fileInput.files[0];
+  const btn = form.querySelector('button[type=submit]');
+  if (!file) return;
+
+  let errEl = form.querySelector('.upload-error');
+  if (!errEl) {
+    errEl = document.createElement('div');
+    errEl.className = 'alert alert-error upload-error';
+    form.appendChild(errEl);
+  }
+  const showError = (msg) => { errEl.textContent = msg; errEl.style.display = ''; };
+  errEl.style.display = 'none';
+
+  const maxSize = parseInt(form.dataset.maxSize, 10);
+  if (maxSize && file.size > maxSize) {
+    showError('File too large. Maximum size is ' + Math.round(maxSize / 1024 / 1024) + 'MB.');
+    return;
+  }
+
+  const fields = new URLSearchParams();
+  new FormData(form).forEach((v, k) => { if (!(v instanceof File)) fields.append(k, v); });
+
+  let progress = form.querySelector('progress');
+  if (!progress) {
+    progress = document.createElement('progress');
+    btn.after(progress);
+  }
+  progress.max = 100;
+  progress.value = 0;
+  progress.style.display = '';
+  btn.disabled = true;
+  const finish = () => { btn.disabled = false; progress.style.display = 'none'; };
+
+  const xhr = new XMLHttpRequest();
+  xhr.open('POST', form.action);
+  xhr.setRequestHeader('Content-Type', file.type || 'application/octet-stream');
+  xhr.setRequestHeader('X-File-Name', encodeURIComponent(file.name));
+  xhr.setRequestHeader('X-Upload-Fields', fields.toString());
+  xhr.upload.onprogress = (ev) => {
+    if (ev.lengthComputable) progress.value = (ev.loaded / ev.total) * 100;
+  };
+  xhr.onload = () => {
+    if (new URL(xhr.responseURL).pathname !== new URL(form.action).pathname) {
+      location.href = xhr.responseURL;
+      return;
+    }
+    const doc = new DOMParser().parseFromString(xhr.responseText, 'text/html');
+    const newMain = doc.querySelector('main.container');
+    const main = document.querySelector('main.container');
+    if (newMain && main) {
+      main.innerHTML = newMain.innerHTML;
+      document.title = doc.title;
+    } else {
+      finish();
+      showError('Upload failed (HTTP ' + xhr.status + ').');
+    }
+  };
+  xhr.onerror = () => { finish(); showError('Upload failed. Please try again.'); };
+  xhr.onabort = () => { finish(); showError('Upload cancelled.'); };
+  xhr.send(file);
+});
+
 // === Share View Page ===
 (function initViewPage() {
   const ctx = window.__shareContext;
@@ -162,13 +231,72 @@ document.addEventListener('htmx:afterSettle', function(e) {
     passwordToken = rawHash.slice(dotIdx + 1);
   }
 
+  // Files above this are not fetched into a blob (bigger blobs are held in browser memory);
+  // they are downloaded via a plain form POST so the browser streams them to disk
+  const LARGE_FILE_BYTES = 100 * 1024 * 1024;
+  const isLargeFile = ctx.type === 'file' && ctx.fileSize > LARGE_FILE_BYTES;
+  let streamStarted = false;
+
+  function startStreamDownload(key, password, pwToken) {
+    const form = document.createElement('form');
+    form.method = 'post';
+    form.action = `/view/${ctx.id}/content`;
+    form.style.display = 'none';
+    const fields = { key, password, passwordToken: pwToken, download: '1' };
+    Object.keys(fields).forEach(name => {
+      if (!fields[name]) return;
+      const input = document.createElement('input');
+      input.type = 'hidden';
+      input.name = name;
+      input.value = fields[name];
+      form.appendChild(input);
+    });
+    document.body.appendChild(form);
+    form.submit();
+    setTimeout(() => form.remove(), 0);
+
+    if (!streamStarted) {
+      streamStarted = true;
+      showDeleteButton(key, password, pwToken);
+      if (ctx.canSave) showSaveButton(key, password, pwToken);
+    }
+  }
+
+  function showLargeDownload(key, password, pwToken) {
+    document.getElementById('loading-indicator')?.remove();
+    const passwordPrompt = document.getElementById('password-prompt');
+    if (passwordPrompt) passwordPrompt.style.display = 'none';
+    const copyBtn = document.getElementById('copy-content-btn');
+    if (copyBtn) copyBtn.style.display = 'none';
+    const contentArea = document.getElementById('content-area');
+    if (!contentArea) return;
+    contentArea.style.display = '';
+    contentArea.innerHTML = '';
+    const p = document.createElement('p');
+    p.className = 'text-muted';
+    p.textContent = 'This file is large (' + Math.round(ctx.fileSize / 1024 / 1024) + ' MB). No preview; it is downloaded directly to disk.';
+    const dl = document.createElement('button');
+    dl.type = 'button';
+    dl.textContent = 'Download';
+    dl.addEventListener('click', () => startStreamDownload(key, password, pwToken));
+    contentArea.appendChild(p);
+    contentArea.appendChild(dl);
+  }
+
   if (ctx.hasPassword) {
     // Wait for password submission
     const submitBtn = document.getElementById('submit-password');
     const pwInput = document.getElementById('sq-unlock');
 
     if (submitBtn) {
-      const doSubmit = () => fetchContent(encryptionKey, pwInput?.value, passwordToken);
+      const doSubmit = () => {
+        if (isLargeFile) {
+          showLargeDownload(encryptionKey, pwInput?.value, passwordToken);
+          startStreamDownload(encryptionKey, pwInput?.value, passwordToken);
+          return;
+        }
+        fetchContent(encryptionKey, pwInput?.value, passwordToken);
+      };
 
       submitBtn.addEventListener('click', doSubmit);
       pwInput?.addEventListener('keydown', e => {
@@ -178,6 +306,8 @@ document.addEventListener('htmx:afterSettle', function(e) {
         }
       });
     }
+  } else if (isLargeFile) {
+    showLargeDownload(encryptionKey, undefined, passwordToken);
   } else {
     // Fetch content immediately
     fetchContent(encryptionKey, undefined, passwordToken);
