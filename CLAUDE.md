@@ -95,6 +95,7 @@ data/                       # Runtime directory (gitignored)
 
 ### Streaming Upload/Download (large files)
 - File uploads are sent by `client.js` (XHR) as the raw request body (`X-File-Name`, `X-Upload-Fields` headers), not multipart; `src/services/upload-stream.ts` parses them and `encryptStreamToFile` encrypts straight to disk with a byte limit
+- Uploads are sent in 50 MB chunks (`X-Upload-Id` / `X-Upload-Offset` / `X-Upload-Total`) so they pass proxies/CDNs with a per-request cap such as Cloudflare's 100 MB; `receiveUpload` feeds one continuous encrypt stream, in-flight upload state is in memory (single process)
 - Raw upload routes (`/share/file`, `/stored/file`, `/upload/:token/file`) skip hono `bodyLimit`
 - Downloads stream via `decryptFileStream`; files over 100 MB are downloaded with a form POST to `/view/:id/content` (no blob preview)
 - A reverse proxy in front must allow large bodies (e.g. nginx `client_max_body_size`)

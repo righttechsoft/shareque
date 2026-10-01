@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import { getUploadRequest, fulfillUploadRequest } from "../services/upload-request";
 import { MinimalLayout } from "../views/layout";
 import { maxUploadBytes } from "../config";
-import { readRawUpload } from "../services/upload-stream";
+import { receiveUpload } from "../services/upload-stream";
 import { FileTooLargeError } from "../crypto/encryption";
 
 const upload = new Hono();
@@ -101,33 +101,21 @@ upload.post("/:token", async (c) => {
 
 upload.post("/:token/file", async (c) => {
   const token = c.req.param("token");
-  const raw = readRawUpload(c);
-  if (!raw.ok) {
-    return c.html(
-      <MinimalLayout title="Error">
-        <div style="max-width:600px;margin:4rem auto">
-          <div class="alert alert-error">
-            {raw.tooLarge ? `File too large. Maximum size is ${Math.round(maxUploadBytes() / 1024 / 1024)}MB.` : raw.error}
-          </div>
-          <a href={`/upload/${token}`}>Try again</a>
-        </div>
-      </MinimalLayout>
-    );
-  }
-
-  let result;
+  let received;
   try {
-    result = await fulfillUploadRequest(token, {
-      type: "file",
-      source: raw.source,
-      maxBytes: raw.maxBytes,
-      fileName: raw.fileName,
-      fileMime: raw.fileMime,
-    });
+    received = await receiveUpload(c, token, (raw) =>
+      fulfillUploadRequest(token, {
+        type: "file",
+        source: raw.source,
+        maxBytes: raw.maxBytes,
+        fileName: raw.fileName,
+        fileMime: raw.fileMime,
+      })
+    );
   } catch (err) {
     const message =
       err instanceof FileTooLargeError
-        ? `File too large. Maximum size is ${Math.round(raw.maxBytes / 1024 / 1024)}MB.`
+        ? `File too large. Maximum size is ${Math.round(maxUploadBytes() / 1024 / 1024)}MB.`
         : err instanceof Error && err.message === "Empty file"
           ? "Please select a file."
           : "Upload failed.";
@@ -141,7 +129,20 @@ upload.post("/:token/file", async (c) => {
       </MinimalLayout>
     );
   }
-  return uploadResultPage(c, result);
+  if (!received.ok) {
+    return c.html(
+      <MinimalLayout title="Error">
+        <div style="max-width:600px;margin:4rem auto">
+          <div class="alert alert-error">
+            {received.tooLarge ? `File too large. Maximum size is ${Math.round(maxUploadBytes() / 1024 / 1024)}MB.` : received.error}
+          </div>
+          <a href={`/upload/${token}`}>Try again</a>
+        </div>
+      </MinimalLayout>
+    );
+  }
+  if (!received.done) return c.body(null, 204);
+  return uploadResultPage(c, received.result);
 });
 
 export default upload;

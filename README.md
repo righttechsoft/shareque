@@ -46,7 +46,7 @@ Visit `http://localhost:3000/manage/login` to access the management console with
 | `WEBAUTHN_RP_ID` | No | `localhost` | WebAuthn relying party ID (your domain) |
 | `WEBAUTHN_ORIGIN` | No | `http://localhost:3000` | WebAuthn expected origin |
 | `CLEANUP_INTERVAL` | No | `5` | Minutes between cleanup runs |
-| `MAX_FILE_SIZE` | No | `2048` | Max upload size in MB (effective limit = min of this and 50% of free disk space). Files are streamed; a reverse proxy in front must allow large bodies (e.g. nginx `client_max_body_size`) |
+| `MAX_FILE_SIZE` | No | `2048` | Max upload size in MB (effective limit = min of this and 50% of free disk space). Files are streamed and uploaded in 50 MB chunks (`X-Upload-Id` / `X-Upload-Offset` / `X-Upload-Total`), so they pass proxies/CDNs with a per-request cap such as Cloudflare's 100 MB; in-flight upload state is in memory. A reverse proxy must still allow 50 MB bodies (e.g. nginx `client_max_body_size`) |
 
 ## Docker
 

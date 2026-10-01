@@ -15,7 +15,7 @@ import {
 } from "../services/stored-data";
 import { Layout } from "../views/layout";
 import { maxUploadBytes } from "../config";
-import { readRawUpload } from "../services/upload-stream";
+import { receiveUpload } from "../services/upload-stream";
 import { FileTooLargeError } from "../crypto/encryption";
 import { Readable } from "node:stream";
 
@@ -115,34 +115,37 @@ stored.post("/stored/file", async (c) => {
       <a href="/dashboard">Back to Dashboard</a>
     </Layout>
   );
-  const raw = readRawUpload(c);
-  if (!raw.ok) {
-    if (raw.tooLarge) return c.html(tooLarge);
-    return c.html(
-      <Layout title="Error">
-        <div class="alert alert-error">{raw.error}</div>
-        <a href="/dashboard">Back to Dashboard</a>
-      </Layout>
-    );
-  }
-  const title = raw.fields.title?.trim();
+  const title = new URLSearchParams(c.req.header("X-Upload-Fields") || "").get("title")?.trim();
   if (!title) return c.redirect("/dashboard?tab=stored");
 
+  let received;
   try {
-    await createStoredFile({
-      userId,
-      title,
-      source: raw.source,
-      maxBytes: raw.maxBytes,
-      fileName: raw.fileName,
-      fileMime: raw.fileMime,
-      userToken,
-    });
+    received = await receiveUpload(c, userId, (raw) =>
+      createStoredFile({
+        userId,
+        title,
+        source: raw.source,
+        maxBytes: raw.maxBytes,
+        fileName: raw.fileName,
+        fileMime: raw.fileMime,
+        userToken,
+      })
+    );
   } catch (err) {
     if (err instanceof FileTooLargeError) return c.html(tooLarge);
     if (err instanceof Error && err.message === "Empty file") return c.redirect("/dashboard?tab=stored");
     throw err;
   }
+  if (!received.ok) {
+    if (received.tooLarge) return c.html(tooLarge);
+    return c.html(
+      <Layout title="Error">
+        <div class="alert alert-error">{received.error}</div>
+        <a href="/dashboard">Back to Dashboard</a>
+      </Layout>
+    );
+  }
+  if (!received.done) return c.body(null, 204);
 
   return c.redirect("/dashboard?tab=stored");
 });

@@ -140,6 +140,9 @@ document.addEventListener('htmx:afterSettle', function(e) {
 });
 
 // === Streamed file upload (raw body via XHR, see src/services/upload-stream.ts) ===
+// Cloudflare rejects request bodies over 100 MB (Free/Pro): send the file as sequential 50 MB chunks.
+// Raise only if nothing in front has a smaller cap.
+const CHUNK_BYTES = 50 * 1024 * 1024;
 document.addEventListener('submit', function(e) {
   const form = e.target;
   if (!form.matches || !form.matches('form[data-stream-upload]')) return;
@@ -179,33 +182,45 @@ document.addEventListener('submit', function(e) {
   btn.disabled = true;
   const finish = () => { btn.disabled = false; progress.style.display = 'none'; };
 
-  const xhr = new XMLHttpRequest();
-  xhr.open('POST', form.action);
-  xhr.setRequestHeader('Content-Type', file.type || 'application/octet-stream');
-  xhr.setRequestHeader('X-File-Name', encodeURIComponent(file.name));
-  xhr.setRequestHeader('X-Upload-Fields', fields.toString());
-  xhr.upload.onprogress = (ev) => {
-    if (ev.lengthComputable) progress.value = (ev.loaded / ev.total) * 100;
+  const uploadId = crypto.randomUUID();
+  const sendChunk = (offset) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', form.action);
+    xhr.setRequestHeader('Content-Type', file.type || 'application/octet-stream');
+    xhr.setRequestHeader('X-File-Name', encodeURIComponent(file.name));
+    xhr.setRequestHeader('X-Upload-Fields', fields.toString());
+    xhr.setRequestHeader('X-Upload-Id', uploadId);
+    xhr.setRequestHeader('X-Upload-Offset', String(offset));
+    xhr.setRequestHeader('X-Upload-Total', String(file.size));
+    xhr.upload.onprogress = (ev) => {
+      progress.value = ((offset + ev.loaded) / file.size) * 100;
+    };
+    xhr.onload = () => {
+      if (xhr.status === 204) {
+        sendChunk(offset + CHUNK_BYTES);
+        return;
+      }
+      if (new URL(xhr.responseURL).pathname !== new URL(form.action).pathname) {
+        location.href = xhr.responseURL;
+        return;
+      }
+      const doc = new DOMParser().parseFromString(xhr.responseText, 'text/html');
+      const newMain = doc.querySelector('main.container');
+      const main = document.querySelector('main.container');
+      if (newMain && main) {
+        main.innerHTML = newMain.innerHTML;
+        document.title = doc.title;
+      } else {
+        finish();
+        showError('Upload failed (HTTP ' + xhr.status + ').');
+      }
+    };
+    // no retry of a failed chunk: the server-side cipher state cannot be rewound
+    xhr.onerror = () => { finish(); showError('Upload failed. Please try again.'); };
+    xhr.onabort = () => { finish(); showError('Upload cancelled.'); };
+    xhr.send(file.slice(offset, offset + CHUNK_BYTES));
   };
-  xhr.onload = () => {
-    if (new URL(xhr.responseURL).pathname !== new URL(form.action).pathname) {
-      location.href = xhr.responseURL;
-      return;
-    }
-    const doc = new DOMParser().parseFromString(xhr.responseText, 'text/html');
-    const newMain = doc.querySelector('main.container');
-    const main = document.querySelector('main.container');
-    if (newMain && main) {
-      main.innerHTML = newMain.innerHTML;
-      document.title = doc.title;
-    } else {
-      finish();
-      showError('Upload failed (HTTP ' + xhr.status + ').');
-    }
-  };
-  xhr.onerror = () => { finish(); showError('Upload failed. Please try again.'); };
-  xhr.onabort = () => { finish(); showError('Upload cancelled.'); };
-  xhr.send(file);
+  sendChunk(0);
 });
 
 // === Share View Page ===

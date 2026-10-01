@@ -12,7 +12,7 @@ import {
 } from "../services/stored-data";
 import { Layout } from "../views/layout";
 import { config, maxUploadBytes } from "../config";
-import { readRawUpload } from "../services/upload-stream";
+import { receiveUpload } from "../services/upload-stream";
 import { FileTooLargeError } from "../crypto/encryption";
 
 const dashboard = new Hono();
@@ -476,7 +476,6 @@ dashboard.post("/share/text", async (c) => {
 // --- Create File Share ---
 dashboard.post("/share/file", async (c) => {
   const userId = c.get("userId") as string;
-  const raw = readRawUpload(c);
   const tooLarge = (
     <Layout title="Error">
       <div class="alert alert-error">
@@ -485,16 +484,7 @@ dashboard.post("/share/file", async (c) => {
       <a href="/dashboard">Back to Dashboard</a>
     </Layout>
   );
-  if (!raw.ok) {
-    if (raw.tooLarge) return c.html(tooLarge);
-    return c.html(
-      <Layout title="Error">
-        <div class="alert alert-error">{raw.error}</div>
-        <a href="/dashboard">Back to Dashboard</a>
-      </Layout>
-    );
-  }
-  const body = raw.fields;
+  const body = Object.fromEntries(new URLSearchParams(c.req.header("X-Upload-Fields") || ""));
   const usePassword = body.use_password === "1";
   const password = (body["shareque-ps"] as string) || undefined;
   const oneTime = body.one_time === "1";
@@ -504,23 +494,36 @@ dashboard.post("/share/file", async (c) => {
 
   const expiresAt = parseTtl(body);
 
-  let result;
+  let received;
   try {
-    result = await createFileShare({
-      userId,
-      source: raw.source,
-      maxBytes: raw.maxBytes,
-      fileName: raw.fileName,
-      fileMime: raw.fileMime,
-      password: usePassword ? password : undefined,
-      maxViews: oneTime ? 1 : undefined,
-      expiresAt,
-    });
+    received = await receiveUpload(c, userId, (raw) =>
+      createFileShare({
+        userId,
+        source: raw.source,
+        maxBytes: raw.maxBytes,
+        fileName: raw.fileName,
+        fileMime: raw.fileMime,
+        password: usePassword ? password : undefined,
+        maxViews: oneTime ? 1 : undefined,
+        expiresAt,
+      })
+    );
   } catch (err) {
     if (err instanceof FileTooLargeError) return c.html(tooLarge);
     if (err instanceof Error && err.message === "Empty file") return c.redirect("/dashboard");
     throw err;
   }
+  if (!received.ok) {
+    if (received.tooLarge) return c.html(tooLarge);
+    return c.html(
+      <Layout title="Error">
+        <div class="alert alert-error">{received.error}</div>
+        <a href="/dashboard">Back to Dashboard</a>
+      </Layout>
+    );
+  }
+  if (!received.done) return c.body(null, 204);
+  const result = received.result;
 
   // Save preferences to cookie
   const prev = getUserPreferences(c);
